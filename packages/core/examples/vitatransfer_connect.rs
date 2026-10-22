@@ -6,11 +6,12 @@ use localsend::vitatransfer::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let vita_ip = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| {
-            "192.168.1.134".to_string()
-        });
+    let vita_ip =
+        std::env::args()
+            .nth(1)
+            .unwrap_or_else(|| {
+                "192.168.1.134".to_string()
+            });
 
     println!(
         "Loading VitaTransfer identity..."
@@ -25,18 +26,23 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut stream =
-        client::connect(&vita_ip).await?;
+        client::connect(
+            &vita_ip
+        )
+        .await?;
 
     println!(
         "TCP connection established."
     );
 
     println!(
-        "Exchanging identities and X25519 public keys..."
+        "Starting VitaTransfer handshake..."
     );
 
-    let _hello =
-        handshake::exchange_hello(
+    println!();
+
+    let result =
+        handshake::perform_handshake(
             &mut stream,
             &signing_key,
         )
@@ -45,11 +51,34 @@ async fn main() -> anyhow::Result<()> {
     println!();
 
     println!(
-        "VitaTransfer hello exchange successful."
+        "========================================"
     );
 
     println!(
-        "Stopping intentionally before Ed25519 signature."
+        "VITATRANSFER HANDSHAKE COMPLETE"
+    );
+
+    println!(
+        "========================================"
+    );
+
+    println!(
+        "Vita identity: {}",
+        identity::fingerprint(
+            &result.vita_identity_public
+        )
+    );
+
+    println!(
+        "Authenticated encrypted session established."
+    );
+
+    println!(
+        "Session key and directional keys derived successfully."
+    );
+
+    println!(
+        "No files will be transferred in this test."
     );
 
     Ok(())

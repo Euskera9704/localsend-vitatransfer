@@ -1,5 +1,26 @@
-use anyhow::{Context, Result};
-use ed25519_dalek::SigningKey;
+use anyhow::{
+    anyhow,
+    bail,
+    Context,
+    Result,
+};
+use ed25519_dalek::{
+    Signature,
+    Signer,
+    SigningKey,
+    Verifier,
+    VerifyingKey,
+};
+use hkdf::Hkdf;
+use hmac::{
+    Hmac,
+    KeyInit,
+    Mac,
+};
+use sha2::{
+    Digest,
+    Sha256,
+};
 use tokio::io::{
     AsyncReadExt,
     AsyncWriteExt,
@@ -11,28 +32,130 @@ use x25519_dalek::{
 };
 
 use super::identity::fingerprint;
+use super::protocol::{
+    DATA_I2R_LABEL,
+    DATA_R2I_LABEL,
+    HKDF_INFO,
+    HKDF_SALT,
+    PAIR_LABEL,
+    PROTOCOL_LABEL,
+    SESSION_READY,
+};
 
-pub struct HelloExchange {
-    pub ephemeral_secret: EphemeralSecret,
+type HmacSha256 = Hmac<Sha256>;
 
-    pub vita_identity_public: [u8; 32],
-
-    pub vita_ephemeral_public: [u8; 32],
+pub struct SessionKeys {
+    pub session_key: [u8; 32],
+    pub initiator_to_responder_key: [u8; 32],
+    pub responder_to_initiator_key: [u8; 32],
 }
 
-pub async fn exchange_hello(
+pub struct HandshakeResult {
+    pub vita_identity_public: [u8; 32],
+    pub transcript_hash: [u8; 32],
+    pub keys: SessionKeys,
+}
+
+fn derive_directional_key(
+    session_key: &[u8; 32],
+    label: &[u8],
+    transcript_hash: &[u8; 32],
+) -> Result<[u8; 32]> {
+    let mut mac =
+        HmacSha256::new_from_slice(
+            session_key,
+        )
+        .map_err(|_| {
+            anyhow!(
+                "Could not initialize VitaTransfer HMAC"
+            )
+        })?;
+
+    mac.update(label);
+    mac.update(transcript_hash);
+
+    let result =
+        mac.finalize().into_bytes();
+
+    let mut key = [0u8; 32];
+
+    key.copy_from_slice(
+        &result
+    );
+
+    Ok(key)
+}
+
+fn make_pairing_code(
+    session_key: &[u8; 32],
+    transcript_hash: &[u8; 32],
+) -> String {
+    /*
+     * Python:
+     *
+     * SHA256(
+     *     PAIR_LABEL
+     *     + session_key
+     *     + transcript_hash
+     * )
+     *
+     * primeros 4 bytes, big endian,
+     * modulo 1.000.000
+     */
+
+    let mut hasher =
+        Sha256::new();
+
+    hasher.update(
+        PAIR_LABEL
+    );
+
+    hasher.update(
+        session_key
+    );
+
+    hasher.update(
+        transcript_hash
+    );
+
+    let digest =
+        hasher.finalize();
+
+    let value =
+        u32::from_be_bytes([
+            digest[0],
+            digest[1],
+            digest[2],
+            digest[3],
+        ])
+        % 1_000_000;
+
+    format!("{value:06}")
+}
+
+pub async fn perform_handshake(
     stream: &mut TcpStream,
     signing_key: &SigningKey,
-) -> Result<HelloExchange> {
+) -> Result<HandshakeResult> {
     /*
-     * Identidad permanente del iniciador.
+     * =====================================================
+     * IDENTIDAD ED25519 DEL PC
+     * =====================================================
      */
+
     let identity_public =
-        signing_key.verifying_key().to_bytes();
+        signing_key
+            .verifying_key()
+            .to_bytes();
 
     /*
-     * X25519 efímero para ESTA sesión.
+     * =====================================================
+     * X25519 EFIMERO
+     * =====================================================
+     *
+     * Una clave nueva para cada sesion.
      */
+
     let ephemeral_secret =
         EphemeralSecret::random();
 
@@ -41,37 +164,45 @@ pub async fn exchange_hello(
             &ephemeral_secret
         );
 
+    let ephemeral_public_bytes =
+        *ephemeral_public.as_bytes();
+
     /*
-     * Exactamente el mismo orden que
-     * nuestro Python:
+     * =====================================================
+     * PC -> VITA
      *
-     * 1. identidad Ed25519 PC/remoto
-     * 2. pública X25519 efímera
+     * 32 bytes Ed25519
+     * 32 bytes X25519
+     * =====================================================
      */
+
     stream
         .write_all(
             &identity_public
         )
         .await
         .context(
-            "Could not send initiator Ed25519 identity",
+            "Could not send initiator Ed25519 identity"
         )?;
 
     stream
         .write_all(
-            ephemeral_public.as_bytes()
+            &ephemeral_public_bytes
         )
         .await
         .context(
-            "Could not send initiator X25519 public key",
+            "Could not send initiator X25519 public key"
         )?;
 
     /*
-     * Vita responde:
+     * =====================================================
+     * VITA -> PC
      *
-     * 1. identidad Ed25519 Vita
-     * 2. pública X25519 efímera Vita
+     * 32 bytes Ed25519
+     * 32 bytes X25519
+     * =====================================================
      */
+
     let mut vita_identity_public =
         [0u8; 32];
 
@@ -81,7 +212,7 @@ pub async fn exchange_hello(
         )
         .await
         .context(
-            "Could not receive Vita Ed25519 identity",
+            "Could not receive Vita Ed25519 identity"
         )?;
 
     let mut vita_ephemeral_public =
@@ -93,7 +224,7 @@ pub async fn exchange_hello(
         )
         .await
         .context(
-            "Could not receive Vita X25519 public key",
+            "Could not receive Vita X25519 public key"
         )?;
 
     println!(
@@ -110,11 +241,344 @@ pub async fn exchange_hello(
         )
     );
 
+    /*
+     * =====================================================
+     * TRANSCRIPT
+     * =====================================================
+     *
+     * Debe ser EXACTAMENTE:
+     *
+     * PROTOCOL_LABEL
+     * + PC identity
+     * + Vita identity
+     * + PC ephemeral
+     * + Vita ephemeral
+     */
+
+    let mut transcript =
+        Vec::with_capacity(
+            PROTOCOL_LABEL.len()
+                + 32
+                + 32
+                + 32
+                + 32,
+        );
+
+    transcript.extend_from_slice(
+        PROTOCOL_LABEL
+    );
+
+    transcript.extend_from_slice(
+        &identity_public
+    );
+
+    transcript.extend_from_slice(
+        &vita_identity_public
+    );
+
+    transcript.extend_from_slice(
+        &ephemeral_public_bytes
+    );
+
+    transcript.extend_from_slice(
+        &vita_ephemeral_public
+    );
+
+    let digest =
+        Sha256::digest(
+            &transcript
+        );
+
+    let mut transcript_hash =
+        [0u8; 32];
+
+    transcript_hash.copy_from_slice(
+        &digest
+    );
+
+    /*
+     * =====================================================
+     * FIRMA ED25519 DEL PC
+     * =====================================================
+     */
+
+    let pc_signature =
+        signing_key.sign(
+            &transcript
+        );
+
+    stream
+        .write_all(
+            &pc_signature.to_bytes()
+        )
+        .await
+        .context(
+            "Could not send PC Ed25519 signature"
+        )?;
+
+    println!(
+        "PC Ed25519 signature sent."
+    );
+
+    /*
+     * =====================================================
+     * FIRMA ED25519 DE LA VITA
+     * =====================================================
+     */
+
+    let mut vita_signature_bytes =
+        [0u8; 64];
+
+    stream
+        .read_exact(
+            &mut vita_signature_bytes
+        )
+        .await
+        .context(
+            "Could not receive Vita Ed25519 signature"
+        )?;
+
+    let vita_verifying_key =
+        VerifyingKey::from_bytes(
+            &vita_identity_public
+        )
+        .context(
+            "Vita sent an invalid Ed25519 public key"
+        )?;
+
+    let vita_signature =
+        Signature::from_bytes(
+            &vita_signature_bytes
+        );
+
+    vita_verifying_key
+        .verify(
+            &transcript,
+            &vita_signature,
+        )
+        .context(
+            "Vita Ed25519 signature verification failed"
+        )?;
+
+    println!(
+        "Vita Ed25519 signature: OK"
+    );
+
+    /*
+     * =====================================================
+     * X25519 SHARED SECRET
+     * =====================================================
+     */
+
+    let vita_x25519_public =
+        PublicKey::from(
+            vita_ephemeral_public
+        );
+
+    let shared_secret =
+        ephemeral_secret
+            .diffie_hellman(
+                &vita_x25519_public
+            );
+
+    println!(
+        "X25519 shared secret derived."
+    );
+
+    /*
+     * =====================================================
+     * HKDF-SHA256
+     * =====================================================
+     *
+     * Python:
+     *
+     * salt = HKDF_SALT
+     *
+     * info =
+     *     HKDF_INFO
+     *     + transcript_hash
+     */
+
+    let mut hkdf_info =
+        Vec::with_capacity(
+            HKDF_INFO.len()
+                + transcript_hash.len()
+        );
+
+    hkdf_info.extend_from_slice(
+        HKDF_INFO
+    );
+
+    hkdf_info.extend_from_slice(
+        &transcript_hash
+    );
+
+    let hkdf =
+        Hkdf::<Sha256>::new(
+            Some(HKDF_SALT),
+            shared_secret.as_bytes(),
+        );
+
+    let mut session_key =
+        [0u8; 32];
+
+    hkdf.expand(
+        &hkdf_info,
+        &mut session_key,
+    )
+    .map_err(|_| {
+        anyhow!(
+            "VitaTransfer HKDF expansion failed"
+        )
+    })?;
+
+    println!(
+        "HKDF-SHA256 session key derived."
+    );
+
+    /*
+     * =====================================================
+     * CLAVES DIRECCIONALES
+     * =====================================================
+     *
+     * PC -> Vita
+     */
+
+    let initiator_to_responder_key =
+        derive_directional_key(
+            &session_key,
+            DATA_I2R_LABEL,
+            &transcript_hash,
+        )?;
+
+    /*
+     * Vita -> PC
+     */
+
+    let responder_to_initiator_key =
+        derive_directional_key(
+            &session_key,
+            DATA_R2I_LABEL,
+            &transcript_hash,
+        )?;
+
+    println!(
+        "Directional keys derived."
+    );
+
+    /*
+     * =====================================================
+     * TRUST STATUS DE LA VITA
+     * =====================================================
+     */
+
+    let mut trust_status =
+        [0u8; 1];
+
+    stream
+        .read_exact(
+            &mut trust_status
+        )
+        .await
+        .context(
+            "Could not receive Vita trust status"
+        )?;
+
+    match trust_status[0] {
+        1 => {
+            println!(
+                "Vita trust: TRUSTED DEVICE VERIFIED"
+            );
+        }
+
+        0 => {
+            /*
+             * Calculamos el mismo código que
+             * calcula el Python.
+             *
+             * NO aceptamos automáticamente.
+             */
+
+            let pairing_code =
+                make_pairing_code(
+                    &session_key,
+                    &transcript_hash,
+                );
+
+            println!();
+            println!(
+                "================================"
+            );
+            println!(
+                "NEW DEVICE - PAIRING REQUIRED"
+            );
+            println!();
+            println!(
+                "PAIRING CODE:"
+            );
+            println!();
+            println!(
+                "        {pairing_code}"
+            );
+            println!();
+            println!(
+                "================================"
+            );
+
+            bail!(
+                "Vita requires pairing. Pairing confirmation is not implemented in the Rust test yet."
+            );
+        }
+
+        other => {
+            bail!(
+                "Invalid Vita trust status: 0x{other:02X}"
+            );
+        }
+    }
+
+    /*
+     * =====================================================
+     * SESSION_READY
+     * =====================================================
+     */
+
+    let mut session_ready =
+        [0u8; 1];
+
+    stream
+        .read_exact(
+            &mut session_ready
+        )
+        .await
+        .context(
+            "Could not receive Vita SESSION_READY"
+        )?;
+
+    if session_ready[0]
+        != SESSION_READY
+    {
+        bail!(
+            "Invalid SESSION_READY: expected 0x{:02X}, received 0x{:02X}",
+            SESSION_READY,
+            session_ready[0],
+        );
+    }
+
+    println!(
+        "SESSION_READY received: 0x{:02X}",
+        session_ready[0]
+    );
+
     Ok(
-        HelloExchange {
-            ephemeral_secret,
+        HandshakeResult {
             vita_identity_public,
-            vita_ephemeral_public,
+            transcript_hash,
+            keys: SessionKeys {
+                session_key,
+                initiator_to_responder_key,
+                responder_to_initiator_key,
+            },
         }
     )
 }
