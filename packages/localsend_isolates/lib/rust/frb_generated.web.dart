@@ -477,6 +477,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsVitaTransferDevice dco_decode_rs_vita_transfer_device(dynamic raw);
 
   @protected
+  RsVitaTransferSendResult dco_decode_rs_vita_transfer_send_result(dynamic raw);
+
+  @protected
+  RsVitaTransferSendStatus dco_decode_rs_vita_transfer_send_status(dynamic raw);
+
+  @protected
   RTCFileError dco_decode_rtc_file_error(dynamic raw);
 
   @protected
@@ -962,6 +968,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsVitaTransferDevice sse_decode_rs_vita_transfer_device(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferSendResult sse_decode_rs_vita_transfer_send_result(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferSendStatus sse_decode_rs_vita_transfer_send_status(SseDeserializer deserializer);
 
   @protected
   RTCFileError sse_decode_rtc_file_error(SseDeserializer deserializer);
@@ -1498,6 +1510,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_vita_transfer_device(RsVitaTransferDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_vita_transfer_send_result(RsVitaTransferSendResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_vita_transfer_send_status(RsVitaTransferSendStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_rtc_file_error(RTCFileError self, SseSerializer serializer);

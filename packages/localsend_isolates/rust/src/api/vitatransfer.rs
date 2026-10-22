@@ -1,6 +1,17 @@
+use std::path::PathBuf;
+
 use crate::frb_generated::StreamSink;
 
-use localsend::vitatransfer::discovery;
+use localsend::vitatransfer::{
+    client,
+    discovery,
+    handshake::{
+        self,
+        HandshakeStatus,
+    },
+    identity,
+    transfer,
+};
 
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
@@ -298,4 +309,224 @@ impl RsVitaTransferDiscovery {
         self.cancel
             .cancel();
     }
+}
+
+/* ========================================================= */
+/* ENVIO PC -> VITA DESDE FLUTTER                            */
+/* ========================================================= */
+
+pub enum RsVitaTransferSendStatus {
+    Completed,
+    PairingRequired,
+}
+
+
+pub struct RsVitaTransferSendResult {
+    pub status: RsVitaTransferSendStatus,
+
+    /*
+     * Solo tendrá valor si la Vita todavía
+     * necesita pairing SAS.
+     *
+     * En esta primera prueba nuestra Vita
+     * ya está emparejada, así que será null.
+     */
+    pub pairing_code: Option<String>,
+
+    pub files_sent: u32,
+
+    pub bytes_sent: u64,
+}
+
+
+/*
+ * Primera API de envío usable desde Dart.
+ *
+ * Por ahora:
+ *
+ * - recibe únicamente rutas reales de archivos;
+ * - usa una única conexión;
+ * - usa un único handshake;
+ * - reutiliza SendState durante todos los archivos;
+ * - cierra la sesión limpiamente al terminar.
+ *
+ * El diálogo SAS y los eventos de progreso se
+ * añadirán después de validar este camino.
+ */
+pub async fn send_vitatransfer_files(
+    host: String,
+    paths: Vec<String>,
+) -> anyhow::Result<RsVitaTransferSendResult> {
+    if paths.is_empty() {
+        anyhow::bail!(
+            "No files were provided to VitaTransfer"
+        );
+    }
+
+
+    /*
+     * =====================================================
+     * IDENTIDAD PC
+     * =====================================================
+     */
+
+    let signing_key =
+        identity::load_existing_identity()?;
+
+
+    /*
+     * =====================================================
+     * TCP
+     * =====================================================
+     */
+
+    let mut stream =
+        client::connect(
+            &host
+        )
+        .await?;
+
+
+    /*
+     * =====================================================
+     * HANDSHAKE
+     * =====================================================
+     */
+
+    let handshake_status =
+        handshake::perform_handshake(
+            &mut stream,
+            &signing_key,
+        )
+        .await?;
+
+
+    let handshake_result =
+        match handshake_status {
+            HandshakeStatus::Established(
+                result
+            ) => {
+                result
+            }
+
+
+            HandshakeStatus::PairingRequired(
+                pending
+            ) => {
+                /*
+                 * Esta primera integración todavía no
+                 * muestra el diálogo SAS en Flutter.
+                 *
+                 * Devolvemos el código a Dart y dejamos
+                 * esa UX para la siguiente fase.
+                 */
+
+                return Ok(
+                    RsVitaTransferSendResult {
+                        status:
+                            RsVitaTransferSendStatus::PairingRequired,
+
+                        pairing_code:
+                            Some(
+                                pending.pairing_code
+                            ),
+
+                        files_sent:
+                            0,
+
+                        bytes_sent:
+                            0,
+                    }
+                );
+            }
+        };
+
+
+    /*
+     * =====================================================
+     * NONCE STATE PC -> VITA
+     * =====================================================
+     *
+     * IMPORTANTE:
+     *
+     * Se crea UNA sola vez por sesión y se reutiliza
+     * para todos los archivos.
+     */
+
+    let mut send_state =
+        transfer::SendState::new()?;
+
+
+    let mut files_sent: u32 =
+        0;
+
+    let mut bytes_sent: u64 =
+        0;
+
+
+    /*
+     * =====================================================
+     * ARCHIVOS
+     * =====================================================
+     */
+
+    for path in paths {
+        let path =
+            PathBuf::from(
+                path
+            );
+
+
+        let stats =
+            transfer::send_file(
+                &mut stream,
+
+                &handshake_result
+                    .keys
+                    .session_key,
+
+                &handshake_result
+                    .keys
+                    .initiator_to_responder_key,
+
+                &mut send_state,
+
+                &path,
+            )
+            .await?;
+
+
+        files_sent +=
+            1;
+
+        bytes_sent +=
+            stats.bytes_sent;
+    }
+
+
+    /*
+     * =====================================================
+     * CIERRE NORMAL
+     * =====================================================
+     */
+
+    transfer::close_session(
+        &mut stream
+    )
+    .await?;
+
+
+    Ok(
+        RsVitaTransferSendResult {
+            status:
+                RsVitaTransferSendStatus::Completed,
+
+            pairing_code:
+                None,
+
+            files_sent,
+
+            bytes_sent,
+        }
+    )
 }

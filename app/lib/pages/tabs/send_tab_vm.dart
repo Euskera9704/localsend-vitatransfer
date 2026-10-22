@@ -19,6 +19,7 @@ import 'package:localsend_app/widget/dialogs/address_input_dialog.dart';
 import 'package:localsend_app/widget/dialogs/favorite_dialog.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/model/session_status.dart';
+import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
@@ -144,6 +145,7 @@ final sendTabVmProvider = ViewProvider((ref) {
     },
     onTapDevice: (context, device) async {
       var files = selectedFiles;
+
       if (files.isEmpty) {
         await AddFileDialog.open(
           context: context,
@@ -156,6 +158,116 @@ final sendTabVmProvider = ViewProvider((ref) {
       if (files.isEmpty) {
         return;
       }
+
+      /*
+      * =====================================================
+      * VITATRANSFER
+      * =====================================================
+      */
+
+      if (device.transport == DeviceTransport.vitaTransfer) {
+        final host = device.ip;
+
+        if (host == null) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'VitaTransfer: el dispositivo no tiene dirección IP.',
+                ),
+              ),
+            );
+          }
+
+          return;
+        }
+
+        /*
+        * En esta primera integración solamente aceptamos
+        * archivos que tengan una ruta física.
+        *
+        * Mensajes, clipboard o archivos únicamente en
+        * memoria se soportarán después.
+        */
+
+        final unsupportedFiles =
+            files.where(
+              (file) => file.path == null,
+            );
+
+        if (unsupportedFiles.isNotEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'VitaTransfer: por ahora solo se pueden enviar archivos físicos.',
+                ),
+              ),
+            );
+          }
+
+          return;
+        }
+
+        final paths =
+            files
+                .map(
+                  (file) => file.path!,
+                )
+                .toList();
+
+        try {
+          final result =
+              await sendVitatransferFiles(
+            host: host,
+            paths: paths,
+          );
+
+          if (!context.mounted) {
+            return;
+          }
+
+          switch (result.status) {
+            case RsVitaTransferSendStatus.completed:
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'VitaTransfer: ${result.filesSent} archivo(s) enviado(s) correctamente.',
+                  ),
+                ),
+              );
+
+            case RsVitaTransferSendStatus.pairingRequired:
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'VitaTransfer requiere emparejamiento. Código SAS: ${result.pairingCode ?? "------"}',
+                  ),
+                ),
+              );
+          }
+        } catch (e) {
+          if (!context.mounted) {
+            return;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Error de VitaTransfer: $e',
+              ),
+            ),
+          );
+        }
+
+        return;
+      }
+
+      /*
+      * =====================================================
+      * LOCALSEND NORMAL
+      * =====================================================
+      */
 
       await ref
           .notifier(sendProvider)

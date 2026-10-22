@@ -236,14 +236,11 @@ class SendTab extends StatelessWidget {
                                         ),
                                       ),
 
-                          onTap:
-                              device.transport == DeviceTransport.vitaTransfer
-                                  ? null
-                                  : () async =>
-                                      await vm.onTapDevice(
-                                        context,
-                                        device,
-                                      ),
+                          onTap: () async =>
+                              await vm.onTapDevice(
+                                context,
+                                device,
+                              ),
                         ),
                 ),
               );

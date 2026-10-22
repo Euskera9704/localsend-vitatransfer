@@ -8,6 +8,9 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 Future<RsVitaTransferDiscovery> startVitatransferDiscovery() => RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery();
 
+Future<RsVitaTransferSendResult> sendVitatransferFiles({required String host, required List<String> paths}) =>
+    RustLib.instance.api.crateApiVitatransferSendVitatransferFiles(host: host, paths: paths);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>
 abstract class RsVitaTransferDiscovery implements RustOpaqueInterface {
   Stream<RsVitaTransferDevice> listen();
@@ -50,4 +53,36 @@ class RsVitaTransferDevice {
           identityPublic == other.identityPublic &&
           canSend == other.canSend &&
           canReceive == other.canReceive;
+}
+
+class RsVitaTransferSendResult {
+  final RsVitaTransferSendStatus status;
+  final String? pairingCode;
+  final int filesSent;
+  final BigInt bytesSent;
+
+  const RsVitaTransferSendResult({
+    required this.status,
+    this.pairingCode,
+    required this.filesSent,
+    required this.bytesSent,
+  });
+
+  @override
+  int get hashCode => status.hashCode ^ pairingCode.hashCode ^ filesSent.hashCode ^ bytesSent.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsVitaTransferSendResult &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          pairingCode == other.pairingCode &&
+          filesSent == other.filesSent &&
+          bytesSent == other.bytesSent;
+}
+
+enum RsVitaTransferSendStatus {
+  completed,
+  pairingRequired,
 }

@@ -77,7 +77,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 414458854;
+  int get rustContentHash => 490042171;
 
   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
     stem: 'rust_lib_localsend_app',
@@ -287,6 +287,8 @@ abstract class RustLibApi extends BaseApi {
   Future<FileMetadata?> crateApiMetadataReadFileMetadata({required String path});
 
   String crateApiFilenameSanitizeFileName({required String name});
+
+  Future<RsVitaTransferSendResult> crateApiVitatransferSendVitatransferFiles({required String host, required List<String> paths});
 
   Future<RsDiscovery> crateApiDiscoveryStartDiscovery({
     required String group,
@@ -2082,6 +2084,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<RsVitaTransferSendResult> crateApiVitatransferSendVitatransferFiles({required String host, required List<String> paths}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(host, serializer);
+          sse_encode_list_String(paths, serializer);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_rs_vita_transfer_send_result,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiVitatransferSendVitatransferFilesConstMeta,
+        argValues: [host, paths],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVitatransferSendVitatransferFilesConstMeta => const TaskConstMeta(
+    debugName: 'send_vitatransfer_files',
+    argNames: ['host', 'paths'],
+  );
+
+  @override
   Future<RsDiscovery> crateApiDiscoveryStartDiscovery({
     required String group,
     required int port,
@@ -2116,7 +2144,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(certPem, serializer);
           sse_encode_String(privateKeyPem, serializer);
           sse_encode_u_64(timeoutMs, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsDiscovery,
@@ -2193,7 +2221,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer,
@@ -2217,7 +2245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery,
@@ -2243,7 +2271,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cert, serializer);
           sse_encode_String(publicKey, serializer);
-          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61, port: port_);
+          pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62, port: port_);
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3438,6 +3466,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       canSend: dco_decode_bool(arr[5]),
       canReceive: dco_decode_bool(arr[6]),
     );
+  }
+
+  @protected
+  RsVitaTransferSendResult dco_decode_rs_vita_transfer_send_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return RsVitaTransferSendResult(
+      status: dco_decode_rs_vita_transfer_send_status(arr[0]),
+      pairingCode: dco_decode_opt_String(arr[1]),
+      filesSent: dco_decode_u_32(arr[2]),
+      bytesSent: dco_decode_u_64(arr[3]),
+    );
+  }
+
+  @protected
+  RsVitaTransferSendStatus dco_decode_rs_vita_transfer_send_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RsVitaTransferSendStatus.values[raw as int];
   }
 
   @protected
@@ -4863,6 +4910,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RsVitaTransferSendResult sse_decode_rs_vita_transfer_send_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_status = sse_decode_rs_vita_transfer_send_status(deserializer);
+    var var_pairingCode = sse_decode_opt_String(deserializer);
+    var var_filesSent = sse_decode_u_32(deserializer);
+    var var_bytesSent = sse_decode_u_64(deserializer);
+    return RsVitaTransferSendResult(status: var_status, pairingCode: var_pairingCode, filesSent: var_filesSent, bytesSent: var_bytesSent);
+  }
+
+  @protected
+  RsVitaTransferSendStatus sse_decode_rs_vita_transfer_send_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RsVitaTransferSendStatus.values[inner];
+  }
+
+  @protected
   RTCFileError sse_decode_rtc_file_error(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_fileId = sse_decode_String(deserializer);
@@ -6271,6 +6335,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_prim_u_8_strict(self.identityPublic, serializer);
     sse_encode_bool(self.canSend, serializer);
     sse_encode_bool(self.canReceive, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_vita_transfer_send_result(RsVitaTransferSendResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_rs_vita_transfer_send_status(self.status, serializer);
+    sse_encode_opt_String(self.pairingCode, serializer);
+    sse_encode_u_32(self.filesSent, serializer);
+    sse_encode_u_64(self.bytesSent, serializer);
+  }
+
+  @protected
+  void sse_encode_rs_vita_transfer_send_status(RsVitaTransferSendStatus self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
