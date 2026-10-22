@@ -27,6 +27,11 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
   final FavoritesService _favoriteService;
   final DiscoveryLogger _discoveryLogger;
 
+  static const Duration _vitaTransferTimeout =
+    Duration(seconds: 6);
+
+  final Map<String, Timer> _vitaTransferExpiryTimers = {};
+
   NearbyDevicesService({
     required IsolateController isolateController,
     required FavoritesService favoriteService,
@@ -34,6 +39,50 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
   }) : _discoveryLogger = discoveryLogs,
        _isolateController = isolateController,
        _favoriteService = favoriteService;
+
+  void _refreshVitaTransferExpiry(
+    String fingerprint,
+  ) {
+    /*
+     * Cada anuncio nuevo cancela el timeout anterior.
+     */
+    _vitaTransferExpiryTimers
+        .remove(fingerprint)
+        ?.cancel();
+
+    /*
+     * Si durante 6 segundos no recibimos otro anuncio,
+     * consideramos que VitaTransfer ya no está disponible.
+     */
+    _vitaTransferExpiryTimers[fingerprint] =
+        Timer(
+      _vitaTransferTimeout,
+      () {
+        _vitaTransferExpiryTimers
+            .remove(fingerprint);
+
+        redux.dispatch(
+          RemoveVitaTransferDeviceAction(
+            fingerprint,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    for (
+      final timer
+          in _vitaTransferExpiryTimers.values
+    ) {
+      timer.cancel();
+    }
+
+    _vitaTransferExpiryTimers.clear();
+
+    super.dispose();
+  }
 
   @override
   NearbyDevicesState init() => const NearbyDevicesState(
@@ -93,8 +142,70 @@ class RegisterDeviceAction extends AsyncReduxAction<NearbyDevicesService, Nearby
     } else {
       await Future.microtask(() {});
     }
+
+    if (
+      device.transport ==
+          DeviceTransport.vitaTransfer
+    ) {
+      notifier._refreshVitaTransferExpiry(
+        device.fingerprint,
+      );
+    }
     return state.copyWith(
       devices: {...state.devices}..update(device.fingerprint, (_) => device, ifAbsent: () => device),
+    );
+  }
+}
+
+class RemoveVitaTransferDeviceAction
+    extends ReduxAction<
+        NearbyDevicesService,
+        NearbyDevicesState
+    > {
+  final String fingerprint;
+
+  RemoveVitaTransferDeviceAction(
+    this.fingerprint,
+  );
+
+  @override
+  bool get trackOrigin => false;
+
+  @override
+  NearbyDevicesState reduce() {
+    final device =
+        state.devices[fingerprint];
+
+    /*
+     * Si ya no existe, no hacemos nada.
+     */
+    if (device == null) {
+      return state;
+    }
+
+    /*
+     * Protección adicional:
+     * esta acción solamente puede eliminar
+     * dispositivos VitaTransfer.
+     */
+    if (
+      device.transport !=
+          DeviceTransport.vitaTransfer
+    ) {
+      return state;
+    }
+
+    final devices =
+        Map<String, Device>.from(
+      state.devices,
+    );
+
+    devices.remove(
+      fingerprint,
+    );
+
+    return state.copyWith(
+      devices: devices,
     );
   }
 }
