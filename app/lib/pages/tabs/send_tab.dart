@@ -224,8 +224,26 @@ class SendTab extends StatelessWidget {
                           device: device,
                           isFavorite: favoriteEntry != null,
                           nameOverride: favoriteEntry?.alias,
-                          onDetailsTap: () async => await context.push(() => DeviceDetailsPage(device: device)),
-                          onTap: () async => await vm.onTapDevice(context, device),
+                          // onDetailsTap: () async => await context.push(() => DeviceDetailsPage(device: device)),
+                          // onTap: () async => await vm.onTapDevice(context, device),
+                          onDetailsTap:
+                              device.transport == DeviceTransport.vitaTransfer
+                                  ? null
+                                  : () async =>
+                                      await context.push(
+                                        () => DeviceDetailsPage(
+                                          device: device,
+                                        ),
+                                      ),
+
+                          onTap:
+                              device.transport == DeviceTransport.vitaTransfer
+                                  ? null
+                                  : () async =>
+                                      await vm.onTapDevice(
+                                        context,
+                                        device,
+                                      ),
                         ),
                 ),
               );
@@ -554,8 +572,26 @@ class _MultiSendDeviceListTile extends StatelessWidget {
       progress: progress,
       isFavorite: isFavorite,
       nameOverride: nameOverride,
-      onDetailsTap: () async => await context.push(() => DeviceDetailsPage(device: device)),
-      onTap: () async => await vm.onTapDeviceMultiSend(context, device),
+      // onDetailsTap: () async => await context.push(() => DeviceDetailsPage(device: device)),
+      // onTap: () async => await vm.onTapDeviceMultiSend(context, device),
+      onDetailsTap:
+          device.transport == DeviceTransport.vitaTransfer
+              ? null
+              : () async =>
+                  await context.push(
+                    () => DeviceDetailsPage(
+                      device: device,
+                    ),
+                  ),
+
+      onTap:
+          device.transport == DeviceTransport.vitaTransfer
+              ? null
+              : () async =>
+                  await vm.onTapDeviceMultiSend(
+                    context,
+                    device,
+                  ),
     );
   }
 }

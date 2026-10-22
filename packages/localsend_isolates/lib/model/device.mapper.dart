@@ -8,6 +8,52 @@
 
 part of 'device.dart';
 
+class DeviceTransportMapper extends EnumMapper<DeviceTransport> {
+  DeviceTransportMapper._();
+
+  static DeviceTransportMapper? _instance;
+  static DeviceTransportMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = DeviceTransportMapper._());
+    }
+    return _instance!;
+  }
+
+  static DeviceTransport fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  DeviceTransport decode(dynamic value) {
+    switch (value) {
+      case r'localSend':
+        return DeviceTransport.localSend;
+      case r'vitaTransfer':
+        return DeviceTransport.vitaTransfer;
+      default:
+        return DeviceTransport.values[0];
+    }
+  }
+
+  @override
+  dynamic encode(DeviceTransport self) {
+    switch (self) {
+      case DeviceTransport.localSend:
+        return r'localSend';
+      case DeviceTransport.vitaTransfer:
+        return r'vitaTransfer';
+    }
+  }
+}
+
+extension DeviceTransportMapperExtension on DeviceTransport {
+  String toValue() {
+    DeviceTransportMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<DeviceTransport>(this) as String;
+  }
+}
+
 class DeviceTypeMapper extends EnumMapper<DeviceType> {
   DeviceTypeMapper._();
 
@@ -377,6 +423,7 @@ class DeviceMapper extends ClassMapperBase<Device> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = DeviceMapper._());
       DeviceTypeMapper.ensureInitialized();
+      DeviceTransportMapper.ensureInitialized();
       DeviceChannelMapper.ensureInitialized();
     }
     return _instance!;
@@ -417,6 +464,13 @@ class DeviceMapper extends ClassMapperBase<Device> {
   );
   static bool _$download(Device v) => v.download;
   static const Field<Device, bool> _f$download = Field('download', _$download);
+  static DeviceTransport _$transport(Device v) => v.transport;
+  static const Field<Device, DeviceTransport> _f$transport = Field(
+    'transport',
+    _$transport,
+    opt: true,
+    def: DeviceTransport.localSend,
+  );
   static List<DeviceChannel> _$channels(Device v) => v.channels;
   static const Field<Device, List<DeviceChannel>> _f$channels = Field(
     'channels',
@@ -435,6 +489,7 @@ class DeviceMapper extends ClassMapperBase<Device> {
     #deviceModel: _f$deviceModel,
     #deviceType: _f$deviceType,
     #download: _f$download,
+    #transport: _f$transport,
     #channels: _f$channels,
   };
 
@@ -450,6 +505,7 @@ class DeviceMapper extends ClassMapperBase<Device> {
       deviceModel: data.dec(_f$deviceModel),
       deviceType: data.dec(_f$deviceType),
       download: data.dec(_f$download),
+      transport: data.dec(_f$transport),
       channels: data.dec(_f$channels),
     );
   }
@@ -517,6 +573,7 @@ abstract class DeviceCopyWith<$R, $In extends Device, $Out>
     String? deviceModel,
     DeviceType? deviceType,
     bool? download,
+    DeviceTransport? transport,
     List<DeviceChannel>? channels,
   });
   DeviceCopyWith<$R2, $In, $Out2> $chain<$R2, $Out2>(Then<$Out2, $R2> t);
@@ -551,6 +608,7 @@ class _DeviceCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Device, $Out>
     Object? deviceModel = $none,
     DeviceType? deviceType,
     bool? download,
+    DeviceTransport? transport,
     List<DeviceChannel>? channels,
   }) => $apply(
     FieldCopyWithData({
@@ -564,6 +622,7 @@ class _DeviceCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Device, $Out>
       if (deviceModel != $none) #deviceModel: deviceModel,
       if (deviceType != null) #deviceType: deviceType,
       if (download != null) #download: download,
+      if (transport != null) #transport: transport,
       if (channels != null) #channels: channels,
     }),
   );
@@ -579,6 +638,7 @@ class _DeviceCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Device, $Out>
     deviceModel: data.get(#deviceModel, or: $value.deviceModel),
     deviceType: data.get(#deviceType, or: $value.deviceType),
     download: data.get(#download, or: $value.download),
+    transport: data.get(#transport, or: $value.transport),
     channels: data.get(#channels, or: $value.channels),
   );
 

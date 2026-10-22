@@ -46,44 +46,93 @@ class DiscoveryService {
 
     final devices = StreamController<Device>();
 
-    unawaited(_runVitaTransferListener());
+    unawaited(_runVitaTransferListener(devices));
     unawaited(_runListener(devices));
 
     return devices.stream;
   }
 
-  Future<void> _runVitaTransferListener() async {
-  if (_vitaTransferListening) {
-    _logger.info('Already listening to VitaTransfer discovery');
-    return;
-  }
-
-  _vitaTransferListening = true;
-
-  try {
-    final discovery = await startVitatransferDiscovery();
-
-    _logger.info('VitaTransfer discovery started');
-
-    await for (final device in discovery.listen()) {
-      _logger.info(
-        'VitaTransfer discovered: '
-        '${device.name} | '
-        '${device.host}:${device.tcpPort} | '
-        '${device.fingerprint} | '
-        'send=${device.canSend} | '
-        'receive=${device.canReceive}',
-      );
+  Future<void> _runVitaTransferListener(
+    StreamController<Device> devices,
+  ) async {
+    if (_vitaTransferListening) {
+      _logger.info('Already listening to VitaTransfer discovery');
+      return;
     }
-  } catch (e) {
-    _logger.warning(
-      'VitaTransfer discovery stopped with an error',
-      e,
-    );
-  } finally {
-    _vitaTransferListening = false;
+
+    _vitaTransferListening = true;
+
+    try {
+      final discovery = await startVitatransferDiscovery();
+
+      _logger.info('VitaTransfer discovery started');
+
+      await for (final vita in discovery.listen()) {
+        _logger.info(
+          'VitaTransfer discovered: '
+          '${vita.name} | '
+          '${vita.host}:${vita.tcpPort} | '
+          '${vita.fingerprint}',
+        );
+
+        final device = Device(
+          signalingId: null,
+
+          ip: vita.host,
+
+          version: 'VitaTransfer 1',
+
+          port: vita.tcpPort,
+
+          /*
+          * Este valor queda false porque VitaTransfer
+          * NO utiliza HTTPS.
+          *
+          * Tampoco significa que VitaTransfer sea HTTP:
+          * transport lo diferencia explícitamente.
+          */
+          https: false,
+
+          fingerprint: vita.fingerprint,
+
+          alias: vita.name,
+
+          deviceModel: null,
+
+          /*
+          * DeviceType sigue describiendo la clase física
+          * de dispositivo. El transporte se indica aparte.
+          */
+          deviceType: DeviceType.mobile,
+
+          download: false,
+
+          /*
+          * IMPORTANTE:
+          *
+          * No inventamos un HttpChannel.
+          *
+          * VitaTransfer no es HTTP ni WebRTC.
+          * El transporte real se conectará después.
+          */
+          channels: const [],
+
+          transport: DeviceTransport.vitaTransfer,
+        );
+
+        if (!devices.isClosed) {
+          devices.add(device);
+        }
+      }
+    } catch (e) {
+      _logger.warning(
+        'VitaTransfer discovery stopped with an error',
+        e,
+      );
+    } finally {
+      _vitaTransferListening = false;
+    }
   }
-}
 
   Future<void> _runListener(StreamController<Device> devices) async {
     // Announcements are only answered while the server runs: the answer would

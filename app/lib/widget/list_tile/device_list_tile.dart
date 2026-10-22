@@ -3,6 +3,7 @@ import 'package:localsend_app/util/device_type_ext.dart';
 import 'package:localsend_app/widget/custom_progress_bar.dart';
 import 'package:localsend_app/widget/device_bage.dart';
 import 'package:localsend_app/widget/list_tile/custom_list_tile.dart';
+import 'package:localsend_app/widget/vita_device_icon.dart';
 import 'package:localsend_isolates/model/device.dart';
 
 class DeviceListTile extends StatelessWidget {
@@ -32,7 +33,13 @@ class DeviceListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final badgeColor = Color.lerp(Theme.of(context).colorScheme.secondaryContainer, Colors.white, 0.3)!;
     return CustomListTile(
-      icon: Icon(device.deviceType.icon, size: 46),
+      icon:
+        device.transport == DeviceTransport.vitaTransfer
+            ? const VitaDeviceIcon(size: 46)
+            : Icon(
+                device.deviceType.icon,
+                size: 46,
+              ),
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -61,16 +68,25 @@ class DeviceListTile extends StatelessWidget {
               child: CustomProgressBar(progress: progress!),
             )
           else ...[
-            if (device.ip != null)
+            if (device.transport == DeviceTransport.vitaTransfer)
               DeviceBadge(
                 backgroundColor: badgeColor,
-                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onSecondaryContainer,
+                label: 'VitaTransfer',
+              )
+            else if (device.ip != null)
+              DeviceBadge(
+                backgroundColor: badgeColor,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onSecondaryContainer,
                 label: 'HTTP',
               )
             else
               DeviceBadge(
                 backgroundColor: badgeColor,
-                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onSecondaryContainer,
                 label: 'WebRTC',
               ),
             if (device.deviceModel != null)

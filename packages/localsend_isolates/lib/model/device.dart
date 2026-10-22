@@ -2,6 +2,12 @@ import 'package:dart_mappable/dart_mappable.dart';
 
 part 'device.mapper.dart';
 
+@MappableEnum(defaultValue: DeviceTransport.localSend)
+enum DeviceTransport {
+  localSend,
+  vitaTransfer,
+}
+
 @MappableEnum(defaultValue: DeviceType.desktop)
 enum DeviceType {
   mobile,
@@ -94,6 +100,13 @@ class Device with DeviceMappable {
   final DeviceType deviceType;
   final bool download;
 
+  /// Transport used to communicate with this device.
+  ///
+  /// LocalSend devices use the normal HTTP/WebRTC stack.
+  /// PS Vita devices discovered by VitaTransfer use the
+  /// custom VitaTransfer transport.
+  final DeviceTransport transport;
+
   /// Every channel the device was confirmed on, best first.
   final List<DeviceChannel> channels;
 
@@ -118,6 +131,7 @@ class Device with DeviceMappable {
     required this.deviceModel,
     required this.deviceType,
     required this.download,
+    this.transport = DeviceTransport.localSend,
     required this.channels,
   });
 
