@@ -8,6 +8,8 @@ pub mod model;
 #[cfg(feature = "multicast")]
 pub mod multicast;
 pub mod util;
+#[cfg(feature = "vitatransfer")]
+pub mod vitatransfer;
 pub mod webrtc;
 
 #[cfg(feature = "http")]
