@@ -217,41 +217,201 @@ final sendTabVmProvider = ViewProvider((ref) {
                 .toList();
 
         try {
-          final result =
-              await sendVitatransferFiles(
+          /*
+          * =====================================================
+          * CREAR SESION VITATRANSFER
+          * =====================================================
+          *
+          * A diferencia del metodo provisional anterior,
+          * este objeto conserva vivo el mismo TcpStream
+          * durante el pairing.
+          */
+
+          final session =
+              await startVitatransferSend(
             host: host,
             paths: paths,
           );
+
+
+          /*
+          * =====================================================
+          * COMPROBAR SI NECESITA PAIRING
+          * =====================================================
+          */
+
+          final pairingCode =
+              await session.pairingCode();
+
+
+          if (pairingCode != null) {
+            if (!context.mounted) {
+              return;
+            }
+
+
+            /*
+            * ===================================================
+            * DIALOGO SAS
+            * ===================================================
+            */
+
+            final accepted =
+                await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (dialogContext) {
+                return AlertDialog(
+                  title: const Text(
+                    'Emparejar PS Vita',
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Comprueba que aparece exactamente el mismo código en tu PS Vita.',
+                      ),
+                      const SizedBox(
+                        height: 20,
+                      ),
+                      Center(
+                        child: SelectableText(
+                          pairingCode,
+                          style:
+                              Theme.of(
+                                dialogContext,
+                              )
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontWeight:
+                                        FontWeight.bold,
+                                    letterSpacing:
+                                        4,
+                                  ),
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 20,
+                      ),
+                      const Text(
+                        'Acepta únicamente si ambos códigos coinciden.',
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(
+                          dialogContext,
+                        ).pop(
+                          false,
+                        );
+                      },
+                      child: const Text(
+                        'Cancelar',
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(
+                          dialogContext,
+                        ).pop(
+                          true,
+                        );
+                      },
+                      child: const Text(
+                        'Coincide',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+
+
+            /*
+            * ===================================================
+            * USUARIO CANCELA
+            * ===================================================
+            */
+
+            if (accepted != true) {
+              await session.confirmPairing(
+                accepted: false,
+              );
+
+
+              if (!context.mounted) {
+                return;
+              }
+
+
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Emparejamiento VitaTransfer cancelado.',
+                  ),
+                ),
+              );
+
+
+              return;
+            }
+
+
+            /*
+            * ===================================================
+            * USUARIO CONFIRMA SAS
+            * ===================================================
+            *
+            * Seguimos usando LA MISMA conexion,
+            * el mismo X25519 y el mismo transcript.
+            */
+
+            await session.confirmPairing(
+              accepted: true,
+            );
+          }
+
+
+          /*
+          * =====================================================
+          * ENVIAR
+          * =====================================================
+          */
+
+          final result =
+              await session.send();
+
 
           if (!context.mounted) {
             return;
           }
 
-          switch (result.status) {
-            case RsVitaTransferSendStatus.completed:
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'VitaTransfer: ${result.filesSent} archivo(s) enviado(s) correctamente.',
-                  ),
-                ),
-              );
 
-            case RsVitaTransferSendStatus.pairingRequired:
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'VitaTransfer requiere emparejamiento. Código SAS: ${result.pairingCode ?? "------"}',
-                  ),
-                ),
-              );
-          }
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(
+            SnackBar(
+              content: Text(
+                'VitaTransfer: ${result.filesSent} archivo(s) enviado(s) correctamente.',
+              ),
+            ),
+          );
         } catch (e) {
           if (!context.mounted) {
             return;
           }
 
-          ScaffoldMessenger.of(context).showSnackBar(
+
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(
             SnackBar(
               content: Text(
                 'Error de VitaTransfer: $e',

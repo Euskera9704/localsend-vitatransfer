@@ -13,6 +13,7 @@ use localsend::vitatransfer::{
     transfer,
 };
 
+use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 
@@ -529,4 +530,468 @@ pub async fn send_vitatransfer_files(
             bytes_sent,
         }
     )
+}
+
+/* ========================================================= */
+/* SESION DE ENVIO VITATRANSFER                              */
+/* CON SOPORTE DE PAIRING SAS DESDE FLUTTER                 */
+/* ========================================================= */
+
+enum VitaTransferHandshakeState {
+    Ready(
+        handshake::HandshakeResult,
+    ),
+
+    Pairing(
+        handshake::PendingPairing,
+    ),
+}
+
+
+/*
+ * Esta estructura mantiene viva la MISMA conexion TCP
+ * mientras Flutter muestra el dialogo SAS.
+ *
+ * Es fundamental no reconectar durante el pairing:
+ *
+ * - mismo X25519 efimero
+ * - mismo transcript
+ * - mismo session_key
+ * - mismo codigo SAS
+ */
+pub struct RsVitaTransferSendSession {
+    stream:
+        Mutex<Option<tokio::net::TcpStream>>,
+
+    handshake_state:
+        Mutex<Option<VitaTransferHandshakeState>>,
+
+    paths:
+        Vec<PathBuf>,
+}
+
+
+/*
+ * Inicia una sesion VitaTransfer.
+ *
+ * Si el dispositivo ya es de confianza:
+ *
+ *     handshake_state = Ready
+ *
+ * Si necesita pairing:
+ *
+ *     handshake_state = Pairing
+ *
+ * En ambos casos mantenemos el TcpStream abierto.
+ */
+pub async fn start_vitatransfer_send(
+    host: String,
+    paths: Vec<String>,
+) -> anyhow::Result<RsVitaTransferSendSession> {
+    if paths.is_empty() {
+        anyhow::bail!(
+            "No files were provided to VitaTransfer"
+        );
+    }
+
+
+    let signing_key =
+        identity::load_existing_identity()?;
+
+
+    let mut stream =
+        client::connect(
+            &host
+        )
+        .await?;
+
+
+    let handshake_status =
+        handshake::perform_handshake(
+            &mut stream,
+            &signing_key,
+        )
+        .await?;
+
+
+    let handshake_state =
+        match handshake_status {
+            HandshakeStatus::Established(
+                result
+            ) => {
+                VitaTransferHandshakeState::Ready(
+                    result
+                )
+            }
+
+
+            HandshakeStatus::PairingRequired(
+                pending
+            ) => {
+                VitaTransferHandshakeState::Pairing(
+                    pending
+                )
+            }
+        };
+
+
+    let paths =
+        paths
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+
+
+    Ok(
+        RsVitaTransferSendSession {
+            stream:
+                Mutex::new(
+                    Some(stream)
+                ),
+
+            handshake_state:
+                Mutex::new(
+                    Some(handshake_state)
+                ),
+
+            paths,
+        }
+    )
+}
+
+
+impl RsVitaTransferSendSession {
+    /*
+     * Devuelve el codigo SAS si esta sesion
+     * necesita confirmacion.
+     *
+     * Si ya existe confianza:
+     *
+     *     None
+     */
+    pub async fn pairing_code(
+        &self,
+    ) -> Option<String> {
+        let state =
+            self
+                .handshake_state
+                .lock()
+                .await;
+
+
+        match state.as_ref() {
+            Some(
+                VitaTransferHandshakeState::Pairing(
+                    pending
+                )
+            ) => {
+                Some(
+                    pending
+                        .pairing_code
+                        .clone()
+                )
+            }
+
+
+            _ => {
+                None
+            }
+        }
+    }
+
+
+    /*
+     * Completa el pairing usando LA MISMA
+     * conexion TCP que creo el SAS.
+     */
+    pub async fn confirm_pairing(
+        &self,
+        accepted: bool,
+    ) -> anyhow::Result<()> {
+        let mut state_guard =
+            self
+                .handshake_state
+                .lock()
+                .await;
+
+
+        let state =
+            state_guard
+                .take()
+                .ok_or_else(
+                    || {
+                        anyhow::anyhow!(
+                            "VitaTransfer handshake state is no longer available"
+                        )
+                    }
+                )?;
+
+
+        match state {
+            VitaTransferHandshakeState::Ready(
+                result
+            ) => {
+                /*
+                 * Ya estaba emparejado.
+                 *
+                 * Restauramos el estado y no hacemos nada.
+                 */
+                *state_guard =
+                    Some(
+                        VitaTransferHandshakeState::Ready(
+                            result
+                        )
+                    );
+
+                Ok(())
+            }
+
+
+            VitaTransferHandshakeState::Pairing(
+                pending
+            ) => {
+                let mut stream_guard =
+                    self
+                        .stream
+                        .lock()
+                        .await;
+
+
+                let stream =
+                    stream_guard
+                        .as_mut()
+                        .ok_or_else(
+                            || {
+                                anyhow::anyhow!(
+                                    "VitaTransfer connection is no longer available"
+                                )
+                            }
+                        )?;
+
+
+                /*
+                 * Rechazo del usuario.
+                 *
+                 * finish_pairing(false) envia el byte
+                 * correspondiente a Vita.
+                 *
+                 * El core devuelve error intencionadamente
+                 * porque la sesion no puede continuar.
+                 *
+                 * Para Flutter, cancelar el dialogo no es
+                 * un error de aplicacion.
+                 */
+                if !accepted {
+                    /*
+                    * Comunicamos el rechazo a Vita,
+                    * pero no esperamos su respuesta final.
+                    *
+                    * Así Cancelar en Flutter es inmediato.
+                    */
+                    stream
+                        .write_all(
+                            &[0u8]
+                        )
+                        .await?;
+
+
+                    drop(pending);
+
+
+                    *stream_guard =
+                        None;
+
+
+                    return Ok(());
+                }
+
+
+                /*
+                 * Aceptacion.
+                 *
+                 * Aqui el core:
+                 *
+                 * - envia PC_ACCEPT
+                 * - recibe el resultado de Vita
+                 * - persiste trust si corresponde
+                 * - completa el handshake
+                 */
+                let result =
+                    handshake::finish_pairing(
+                        stream,
+                        pending,
+                        true,
+                    )
+                    .await?;
+
+
+                *state_guard =
+                    Some(
+                        VitaTransferHandshakeState::Ready(
+                            result
+                        )
+                    );
+
+
+                Ok(())
+            }
+        }
+    }
+
+
+    /*
+     * Envia todos los archivos una vez que
+     * el handshake esta completamente listo.
+     */
+    pub async fn send(
+        &self,
+    ) -> anyhow::Result<RsVitaTransferSendResult> {
+        let mut state_guard =
+            self
+                .handshake_state
+                .lock()
+                .await;
+
+
+        let handshake_result =
+            match state_guard.take() {
+                Some(
+                    VitaTransferHandshakeState::Ready(
+                        result
+                    )
+                ) => {
+                    result
+                }
+
+
+                Some(
+                    VitaTransferHandshakeState::Pairing(
+                        pending
+                    )
+                ) => {
+                    /*
+                     * Todavia no podemos transmitir.
+                     * Restauramos el pairing pendiente.
+                     */
+                    *state_guard =
+                        Some(
+                            VitaTransferHandshakeState::Pairing(
+                                pending
+                            )
+                        );
+
+
+                    anyhow::bail!(
+                        "VitaTransfer pairing has not been confirmed yet"
+                    );
+                }
+
+
+                None => {
+                    anyhow::bail!(
+                        "VitaTransfer session has already been consumed"
+                    );
+                }
+            };
+
+
+        /*
+         * Ya no necesitamos bloquear el estado del
+         * handshake mientras enviamos datos.
+         */
+        drop(state_guard);
+
+
+        let mut stream_guard =
+            self
+                .stream
+                .lock()
+                .await;
+
+
+        let stream =
+            stream_guard
+                .as_mut()
+                .ok_or_else(
+                    || {
+                        anyhow::anyhow!(
+                            "VitaTransfer connection is no longer available"
+                        )
+                    }
+                )?;
+
+
+        /*
+         * Un unico estado de nonce para TODA
+         * la sesion PC -> Vita.
+         */
+        let mut send_state =
+            transfer::SendState::new()?;
+
+
+        let mut files_sent:
+            u32 = 0;
+
+        let mut bytes_sent:
+            u64 = 0;
+
+
+        for path in &self.paths {
+            let stats =
+                transfer::send_file(
+                    stream,
+
+                    &handshake_result
+                        .keys
+                        .session_key,
+
+                    &handshake_result
+                        .keys
+                        .initiator_to_responder_key,
+
+                    &mut send_state,
+
+                    path,
+                )
+                .await?;
+
+
+            files_sent +=
+                1;
+
+            bytes_sent +=
+                stats.bytes_sent;
+        }
+
+
+        transfer::close_session(
+            stream
+        )
+        .await?;
+
+
+        /*
+         * La sesion es one-shot.
+         *
+         * Despues de SESSION_END ya no debe
+         * reutilizarse este socket.
+         */
+        *stream_guard =
+            None;
+
+
+        Ok(
+            RsVitaTransferSendResult {
+                status:
+                    RsVitaTransferSendStatus::Completed,
+
+                pairing_code:
+                    None,
+
+                files_sent,
+
+                bytes_sent,
+            }
+        )
+    }
 }

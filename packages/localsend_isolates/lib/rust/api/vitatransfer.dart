@@ -6,16 +6,30 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `VitaTransferHandshakeState`
+
 Future<RsVitaTransferDiscovery> startVitatransferDiscovery() => RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery();
 
 Future<RsVitaTransferSendResult> sendVitatransferFiles({required String host, required List<String> paths}) =>
     RustLib.instance.api.crateApiVitatransferSendVitatransferFiles(host: host, paths: paths);
+
+Future<RsVitaTransferSendSession> startVitatransferSend({required String host, required List<String> paths}) =>
+    RustLib.instance.api.crateApiVitatransferStartVitatransferSend(host: host, paths: paths);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>
 abstract class RsVitaTransferDiscovery implements RustOpaqueInterface {
   Stream<RsVitaTransferDevice> listen();
 
   Future<void> stop();
+}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferSendSession>>
+abstract class RsVitaTransferSendSession implements RustOpaqueInterface {
+  Future<void> confirmPairing({required bool accepted});
+
+  Future<String?> pairingCode();
+
+  Future<RsVitaTransferSendResult> send();
 }
 
 class RsVitaTransferDevice {
