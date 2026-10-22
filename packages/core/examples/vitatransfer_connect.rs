@@ -3,30 +3,81 @@ use std::io::{
     Write,
 };
 
+use std::path::PathBuf;
+
 use localsend::vitatransfer::{
     client,
+
     handshake::{
         self,
         HandshakeStatus,
     },
+
     identity,
+    transfer,
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let vita_ip =
+    /*
+     * Argumento 1:
+     * IP Vita
+     *
+     * Argumento 2:
+     * archivo
+     */
+
+    let mut args =
         std::env::args()
-            .nth(1)
+            .skip(1);
+
+    let vita_ip =
+        args.next()
             .unwrap_or_else(|| {
-                "192.168.1.134".to_string()
+                "192.168.1.134"
+                    .to_string()
             });
+
+    let file_path =
+        match args.next() {
+            Some(path) => {
+                PathBuf::from(
+                    path
+                )
+            }
+
+            None => {
+                println!(
+                    "Uso:"
+                );
+
+                println!(
+                    "cargo run --example vitatransfer_connect --features vitatransfer -- <IP_VITA> <ARCHIVO>"
+                );
+
+                return Ok(());
+            }
+        };
+
+    /*
+     * =====================================================
+     * IDENTIDAD
+     * =====================================================
+     */
 
     println!(
         "Loading VitaTransfer identity..."
     );
 
     let signing_key =
-        identity::load_existing_identity()?;
+        identity
+            ::load_existing_identity()?;
+
+    /*
+     * =====================================================
+     * TCP
+     * =====================================================
+     */
 
     println!(
         "Connecting to VitaTransfer at {}:5000...",
@@ -42,6 +93,12 @@ async fn main() -> anyhow::Result<()> {
     println!(
         "TCP connection established."
     );
+
+    /*
+     * =====================================================
+     * HANDSHAKE
+     * =====================================================
+     */
 
     println!(
         "Starting VitaTransfer handshake..."
@@ -71,41 +128,33 @@ async fn main() -> anyhow::Result<()> {
                 println!(
                     "========================================"
                 );
-
                 println!(
                     "NEW DEVICE - PAIRING REQUIRED"
                 );
-
                 println!();
-
                 println!(
                     "PAIRING CODE:"
                 );
-
                 println!();
-
                 println!(
                     "              {}",
                     pending.pairing_code
                 );
-
                 println!();
-
                 println!(
                     "Comprueba que aparece el mismo codigo en la Vita."
                 );
-
                 println!(
                     "========================================"
                 );
-
                 println!();
 
                 print!(
                     "¿Coincide el codigo? [s/n]: "
                 );
 
-                io::stdout().flush()?;
+                io::stdout()
+                    .flush()?;
 
                 let mut answer =
                     String::new();
@@ -140,37 +189,60 @@ async fn main() -> anyhow::Result<()> {
         };
 
     println!();
-
-    println!(
-        "========================================"
-    );
-
     println!(
         "VITATRANSFER HANDSHAKE COMPLETE"
     );
 
     println!(
-        "========================================"
-    );
-
-    println!(
         "Vita identity: {}",
         identity::fingerprint(
-            &result.vita_identity_public
+            &result
+                .vita_identity_public
         )
     );
 
-    println!(
-        "Authenticated encrypted session established."
-    );
+    /*
+     * =====================================================
+     * ESTADO DE NONCES PARA TODA LA SESION
+     * =====================================================
+     */
 
-    println!(
-        "Session key and directional keys derived successfully."
-    );
+    let mut send_state =
+        transfer::SendState::new()?;
 
-    println!(
-        "No files will be transferred in this test."
-    );
+    /*
+     * =====================================================
+     * PRIMER ARCHIVO REAL
+     * =====================================================
+     */
+
+    transfer::send_file(
+        &mut stream,
+
+        &result
+            .keys
+            .session_key,
+
+        &result
+            .keys
+            .initiator_to_responder_key,
+
+        &mut send_state,
+
+        &file_path,
+    )
+    .await?;
+
+    /*
+     * =====================================================
+     * CIERRE NORMAL
+     * =====================================================
+     */
+
+    transfer::close_session(
+        &mut stream
+    )
+    .await?;
 
     Ok(())
 }
