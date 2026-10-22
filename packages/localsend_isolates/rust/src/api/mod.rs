@@ -8,4 +8,5 @@ pub mod metadata;
 pub mod model;
 pub mod server;
 pub mod stream;
+pub mod vitatransfer;
 pub mod webrtc;

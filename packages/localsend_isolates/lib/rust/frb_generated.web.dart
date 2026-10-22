@@ -20,6 +20,7 @@ import 'package:localsend_isolates/rust/api/metadata.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/rust/api/stream.dart';
+import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/rust/api/webrtc.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 import 'package:uuid/uuid.dart';
@@ -65,6 +66,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_RsHttpServerPtr =>
       wire.rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer;
 
+  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_RsVitaTransferDiscoveryPtr =>
+      wire.rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
@@ -102,6 +106,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
 
   @protected
+  RsVitaTransferDiscovery dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(dynamic raw);
+
+  @protected
   Dart2RustStreamSink dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(dynamic raw);
 
   @protected
@@ -133,6 +140,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpServer dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
+
+  @protected
+  RsVitaTransferDiscovery dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(dynamic raw);
 
   @protected
   FutureOr<void> Function(LsSignalingConnection)
@@ -183,6 +193,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(dynamic raw);
 
   @protected
+  RsVitaTransferDiscovery dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(dynamic raw);
+
+  @protected
   Set<String> dco_decode_Set_String_None(dynamic raw);
 
   @protected
@@ -207,6 +220,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsUploadEvent> dco_decode_StreamSink_rs_upload_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<RsVitaTransferDevice> dco_decode_StreamSink_rs_vita_transfer_device_Sse(dynamic raw);
 
   @protected
   RustStreamSink<RTCFileError> dco_decode_StreamSink_rtc_file_error_Sse(dynamic raw);
@@ -458,6 +474,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsUploadEvent dco_decode_rs_upload_event(dynamic raw);
 
   @protected
+  RsVitaTransferDevice dco_decode_rs_vita_transfer_device(dynamic raw);
+
+  @protected
   RTCFileError dco_decode_rtc_file_error(dynamic raw);
 
   @protected
@@ -560,6 +579,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
 
   @protected
+  RsVitaTransferDiscovery sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Dart2RustStreamSink sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(
     SseDeserializer deserializer,
   );
@@ -601,6 +625,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsHttpServer sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferDiscovery sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    SseDeserializer deserializer,
+  );
 
   @protected
   Object sse_decode_DartOpaque(SseDeserializer deserializer);
@@ -647,6 +676,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsHttpServer sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(SseDeserializer deserializer);
 
   @protected
+  RsVitaTransferDiscovery sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Set<String> sse_decode_Set_String_None(SseDeserializer deserializer);
 
   @protected
@@ -671,6 +705,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsUploadEvent> sse_decode_StreamSink_rs_upload_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsVitaTransferDevice> sse_decode_StreamSink_rs_vita_transfer_device_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RTCFileError> sse_decode_StreamSink_rtc_file_error_Sse(SseDeserializer deserializer);
@@ -924,6 +961,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsUploadEvent sse_decode_rs_upload_event(SseDeserializer deserializer);
 
   @protected
+  RsVitaTransferDevice sse_decode_rs_vita_transfer_device(SseDeserializer deserializer);
+
+  @protected
   RTCFileError sse_decode_rtc_file_error(SseDeserializer deserializer);
 
   @protected
@@ -1038,6 +1078,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    RsVitaTransferDiscovery self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDart2RustStreamSink(
     Dart2RustStreamSink self,
     SseSerializer serializer,
@@ -1090,6 +1136,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    RsVitaTransferDiscovery self,
+    SseSerializer serializer,
+  );
 
   @protected
   void
@@ -1156,6 +1208,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(RsHttpServer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(
+    RsVitaTransferDiscovery self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_Set_String_None(Set<String> self, SseSerializer serializer);
 
   @protected
@@ -1181,6 +1239,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_StreamSink_rs_upload_event_Sse(RustStreamSink<RsUploadEvent> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_rs_vita_transfer_device_Sse(RustStreamSink<RsVitaTransferDevice> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_rtc_file_error_Sse(RustStreamSink<RTCFileError> self, SseSerializer serializer);
@@ -1436,6 +1497,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_rs_upload_event(RsUploadEvent self, SseSerializer serializer);
 
   @protected
+  void sse_encode_rs_vita_transfer_device(RsVitaTransferDevice self, SseSerializer serializer);
+
+  @protected
   void sse_encode_rtc_file_error(RTCFileError self, SseSerializer serializer);
 
   @protected
@@ -1560,6 +1624,12 @@ class RustLibWire implements BaseWire {
 
   void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(int ptr) =>
       wasmModule.rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(ptr);
+
+  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(int ptr) =>
+      wasmModule.rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(ptr);
+
+  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(int ptr) =>
+      wasmModule.rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(ptr);
 }
 
 @JS('wasm_bindgen')
@@ -1611,4 +1681,8 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(int ptr);
 
   external void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsHttpServer(int ptr);
+
+  external void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(int ptr);
+
+  external void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRsVitaTransferDiscovery(int ptr);
 }

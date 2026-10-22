@@ -4,6 +4,7 @@ import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/rust/api/discovery.dart';
 import 'package:localsend_isolates/rust/api/model.dart' as rust_model;
+import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/src/isolate/child/sync_provider.dart';
 import 'package:localsend_isolates/util/rust.dart';
 import 'package:logging/logging.dart';
@@ -26,6 +27,7 @@ class DiscoveryService {
   RsDiscovery? _discovery;
   Completer<void> _retryCompleter = Completer();
   bool _listening = false;
+  bool _vitaTransferListening = false;
 
   /// Whether the current discovery was stopped by [restartListener], as
   /// opposed to stopping itself because the multicast sockets failed.
@@ -43,9 +45,45 @@ class DiscoveryService {
     _listening = true;
 
     final devices = StreamController<Device>();
+
+    unawaited(_runVitaTransferListener());
     unawaited(_runListener(devices));
+
     return devices.stream;
   }
+
+  Future<void> _runVitaTransferListener() async {
+  if (_vitaTransferListening) {
+    _logger.info('Already listening to VitaTransfer discovery');
+    return;
+  }
+
+  _vitaTransferListening = true;
+
+  try {
+    final discovery = await startVitatransferDiscovery();
+
+    _logger.info('VitaTransfer discovery started');
+
+    await for (final device in discovery.listen()) {
+      _logger.info(
+        'VitaTransfer discovered: '
+        '${device.name} | '
+        '${device.host}:${device.tcpPort} | '
+        '${device.fingerprint} | '
+        'send=${device.canSend} | '
+        'receive=${device.canReceive}',
+      );
+    }
+  } catch (e) {
+    _logger.warning(
+      'VitaTransfer discovery stopped with an error',
+      e,
+    );
+  } finally {
+    _vitaTransferListening = false;
+  }
+}
 
   Future<void> _runListener(StreamController<Device> devices) async {
     // Announcements are only answered while the server runs: the answer would
