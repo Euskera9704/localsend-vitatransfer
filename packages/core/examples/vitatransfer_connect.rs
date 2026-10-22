@@ -1,6 +1,14 @@
+use std::io::{
+    self,
+    Write,
+};
+
 use localsend::vitatransfer::{
     client,
-    handshake,
+    handshake::{
+        self,
+        HandshakeStatus,
+    },
     identity,
 };
 
@@ -41,12 +49,95 @@ async fn main() -> anyhow::Result<()> {
 
     println!();
 
-    let result =
+    let status =
         handshake::perform_handshake(
             &mut stream,
             &signing_key,
         )
         .await?;
+
+    let result =
+        match status {
+            HandshakeStatus::Established(
+                result
+            ) => {
+                result
+            }
+
+            HandshakeStatus::PairingRequired(
+                pending
+            ) => {
+                println!();
+                println!(
+                    "========================================"
+                );
+
+                println!(
+                    "NEW DEVICE - PAIRING REQUIRED"
+                );
+
+                println!();
+
+                println!(
+                    "PAIRING CODE:"
+                );
+
+                println!();
+
+                println!(
+                    "              {}",
+                    pending.pairing_code
+                );
+
+                println!();
+
+                println!(
+                    "Comprueba que aparece el mismo codigo en la Vita."
+                );
+
+                println!(
+                    "========================================"
+                );
+
+                println!();
+
+                print!(
+                    "¿Coincide el codigo? [s/n]: "
+                );
+
+                io::stdout().flush()?;
+
+                let mut answer =
+                    String::new();
+
+                io::stdin()
+                    .read_line(
+                        &mut answer
+                    )?;
+
+                let answer =
+                    answer
+                        .trim()
+                        .to_lowercase();
+
+                let accepted =
+                    matches!(
+                        answer.as_str(),
+                        "s"
+                            | "si"
+                            | "sí"
+                            | "y"
+                            | "yes"
+                    );
+
+                handshake::finish_pairing(
+                    &mut stream,
+                    pending,
+                    accepted,
+                )
+                .await?
+            }
+        };
 
     println!();
 

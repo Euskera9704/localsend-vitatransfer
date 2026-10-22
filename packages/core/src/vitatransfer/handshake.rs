@@ -56,6 +56,16 @@ pub struct HandshakeResult {
     pub keys: SessionKeys,
 }
 
+pub struct PendingPairing {
+    pub pairing_code: String,
+    pub result: HandshakeResult,
+}
+
+pub enum HandshakeStatus {
+    Established(HandshakeResult),
+    PairingRequired(PendingPairing),
+}
+
 fn derive_directional_key(
     session_key: &[u8; 32],
     label: &[u8],
@@ -77,7 +87,8 @@ fn derive_directional_key(
     let result =
         mac.finalize().into_bytes();
 
-    let mut key = [0u8; 32];
+    let mut key =
+        [0u8; 32];
 
     key.copy_from_slice(
         &result
@@ -90,19 +101,6 @@ fn make_pairing_code(
     session_key: &[u8; 32],
     transcript_hash: &[u8; 32],
 ) -> String {
-    /*
-     * Python:
-     *
-     * SHA256(
-     *     PAIR_LABEL
-     *     + session_key
-     *     + transcript_hash
-     * )
-     *
-     * primeros 4 bytes, big endian,
-     * modulo 1.000.000
-     */
-
     let mut hasher =
         Sha256::new();
 
@@ -133,10 +131,43 @@ fn make_pairing_code(
     format!("{value:06}")
 }
 
+async fn receive_session_ready(
+    stream: &mut TcpStream,
+) -> Result<()> {
+    let mut session_ready =
+        [0u8; 1];
+
+    stream
+        .read_exact(
+            &mut session_ready
+        )
+        .await
+        .context(
+            "Could not receive Vita SESSION_READY"
+        )?;
+
+    if session_ready[0]
+        != SESSION_READY
+    {
+        bail!(
+            "Invalid SESSION_READY: expected 0x{:02X}, received 0x{:02X}",
+            SESSION_READY,
+            session_ready[0],
+        );
+    }
+
+    println!(
+        "SESSION_READY received: 0x{:02X}",
+        session_ready[0]
+    );
+
+    Ok(())
+}
+
 pub async fn perform_handshake(
     stream: &mut TcpStream,
     signing_key: &SigningKey,
-) -> Result<HandshakeResult> {
+) -> Result<HandshakeStatus> {
     /*
      * =====================================================
      * IDENTIDAD ED25519 DEL PC
@@ -152,8 +183,6 @@ pub async fn perform_handshake(
      * =====================================================
      * X25519 EFIMERO
      * =====================================================
-     *
-     * Una clave nueva para cada sesion.
      */
 
     let ephemeral_secret =
@@ -246,8 +275,6 @@ pub async fn perform_handshake(
      * TRANSCRIPT
      * =====================================================
      *
-     * Debe ser EXACTAMENTE:
-     *
      * PROTOCOL_LABEL
      * + PC identity
      * + Vita identity
@@ -298,7 +325,7 @@ pub async fn perform_handshake(
 
     /*
      * =====================================================
-     * FIRMA ED25519 DEL PC
+     * FIRMA DEL PC
      * =====================================================
      */
 
@@ -322,7 +349,7 @@ pub async fn perform_handshake(
 
     /*
      * =====================================================
-     * FIRMA ED25519 DE LA VITA
+     * FIRMA DE LA VITA
      * =====================================================
      */
 
@@ -366,7 +393,7 @@ pub async fn perform_handshake(
 
     /*
      * =====================================================
-     * X25519 SHARED SECRET
+     * X25519
      * =====================================================
      */
 
@@ -389,14 +416,6 @@ pub async fn perform_handshake(
      * =====================================================
      * HKDF-SHA256
      * =====================================================
-     *
-     * Python:
-     *
-     * salt = HKDF_SALT
-     *
-     * info =
-     *     HKDF_INFO
-     *     + transcript_hash
      */
 
     let mut hkdf_info =
@@ -440,8 +459,6 @@ pub async fn perform_handshake(
      * =====================================================
      * CLAVES DIRECCIONALES
      * =====================================================
-     *
-     * PC -> Vita
      */
 
     let initiator_to_responder_key =
@@ -450,10 +467,6 @@ pub async fn perform_handshake(
             DATA_I2R_LABEL,
             &transcript_hash,
         )?;
-
-    /*
-     * Vita -> PC
-     */
 
     let responder_to_initiator_key =
         derive_directional_key(
@@ -466,9 +479,20 @@ pub async fn perform_handshake(
         "Directional keys derived."
     );
 
+    let result =
+        HandshakeResult {
+            vita_identity_public,
+            transcript_hash,
+            keys: SessionKeys {
+                session_key,
+                initiator_to_responder_key,
+                responder_to_initiator_key,
+            },
+        };
+
     /*
      * =====================================================
-     * TRUST STATUS DE LA VITA
+     * TRUST STATUS
      * =====================================================
      */
 
@@ -485,49 +509,48 @@ pub async fn perform_handshake(
         )?;
 
     match trust_status[0] {
+        /*
+         * Ya emparejado.
+         */
         1 => {
             println!(
                 "Vita trust: TRUSTED DEVICE VERIFIED"
             );
+
+            receive_session_ready(
+                stream
+            )
+            .await?;
+
+            Ok(
+                HandshakeStatus::Established(
+                    result
+                )
+            )
         }
 
+        /*
+         * Dispositivo nuevo.
+         */
         0 => {
-            /*
-             * Calculamos el mismo código que
-             * calcula el Python.
-             *
-             * NO aceptamos automáticamente.
-             */
-
             let pairing_code =
                 make_pairing_code(
-                    &session_key,
-                    &transcript_hash,
+                    &result.keys.session_key,
+                    &result.transcript_hash,
                 );
 
-            println!();
             println!(
-                "================================"
-            );
-            println!(
-                "NEW DEVICE - PAIRING REQUIRED"
-            );
-            println!();
-            println!(
-                "PAIRING CODE:"
-            );
-            println!();
-            println!(
-                "        {pairing_code}"
-            );
-            println!();
-            println!(
-                "================================"
+                "Vita trust: PAIRING REQUIRED"
             );
 
-            bail!(
-                "Vita requires pairing. Pairing confirmation is not implemented in the Rust test yet."
-            );
+            Ok(
+                HandshakeStatus::PairingRequired(
+                    PendingPairing {
+                        pairing_code,
+                        result,
+                    }
+                )
+            )
         }
 
         other => {
@@ -536,49 +559,81 @@ pub async fn perform_handshake(
             );
         }
     }
+}
 
+pub async fn finish_pairing(
+    stream: &mut TcpStream,
+    pending: PendingPairing,
+    accepted: bool,
+) -> Result<HandshakeResult> {
     /*
-     * =====================================================
-     * SESSION_READY
-     * =====================================================
+     * El Python manda:
+     *
+     * 1 = codigo coincide / aceptar
+     * 0 = rechazar
      */
 
-    let mut session_ready =
+    let pc_accept =
+        if accepted {
+            1u8
+        } else {
+            0u8
+        };
+
+    stream
+        .write_all(
+            &[pc_accept]
+        )
+        .await
+        .context(
+            "Could not send pairing decision to Vita"
+        )?;
+
+    /*
+     * La Vita devuelve el resultado final
+     * del emparejamiento.
+     */
+
+    let mut final_result =
         [0u8; 1];
 
     stream
         .read_exact(
-            &mut session_ready
+            &mut final_result
         )
         .await
         .context(
-            "Could not receive Vita SESSION_READY"
+            "Could not receive final pairing result from Vita"
         )?;
 
-    if session_ready[0]
-        != SESSION_READY
-    {
+    if !accepted {
         bail!(
-            "Invalid SESSION_READY: expected 0x{:02X}, received 0x{:02X}",
-            SESSION_READY,
-            session_ready[0],
+            "Pairing rejected by user"
+        );
+    }
+
+    if final_result[0] != 1 {
+        bail!(
+            "PAIRING REJECTED by Vita"
         );
     }
 
     println!(
-        "SESSION_READY received: 0x{:02X}",
-        session_ready[0]
+        "PAIRING SUCCESS"
     );
 
+    /*
+     * Después del pairing exitoso el
+     * protocolo continúa exactamente
+     * igual que para un peer ya confiable.
+     */
+
+    receive_session_ready(
+        stream
+    )
+    .await?;
+
     Ok(
-        HandshakeResult {
-            vita_identity_public,
-            transcript_hash,
-            keys: SessionKeys {
-                session_key,
-                initiator_to_responder_key,
-                responder_to_initiator_key,
-            },
-        }
+        pending.result
     )
 }
