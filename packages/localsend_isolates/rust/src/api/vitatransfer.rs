@@ -339,6 +339,38 @@ pub struct RsVitaTransferSendResult {
     pub bytes_sent: u64,
 }
 
+pub struct RsVitaTransferProgress {
+    pub file_name: String,
+
+    /*
+     * Índice basado en 1:
+     * 1 de 3, 2 de 3...
+     */
+    pub file_index: u32,
+    pub file_count: u32,
+
+    pub file_bytes_sent: u64,
+    pub file_size: u64,
+
+    pub total_bytes_sent: u64,
+    pub total_size: u64,
+
+    pub megabytes_per_second: f64,
+
+    /*
+     * true solamente cuando toda la sesión
+     * ha terminado correctamente.
+     */
+    pub finished: bool,
+
+    pub canceled: bool,
+
+    /*
+     * Si ocurre un error durante el envío,
+     * lo mandaremos por el mismo Stream.
+     */
+    pub error: Option<String>,
+}
 
 /*
  * Primera API de envío usable desde Dart.
@@ -568,6 +600,9 @@ pub struct RsVitaTransferSendSession {
 
     paths:
         Vec<PathBuf>,
+
+    cancel:
+        CancellationToken,
 }
 
 
@@ -655,6 +690,9 @@ pub async fn start_vitatransfer_send(
                 ),
 
             paths,
+
+            cancel:
+                CancellationToken::new(),
         }
     )
 }
@@ -836,6 +874,557 @@ impl RsVitaTransferSendSession {
                 Ok(())
             }
         }
+    }
+
+    pub fn cancel(
+        &self,
+    ) {
+        self.cancel
+            .cancel();
+    }
+
+    pub async fn send_with_progress(
+        &self,
+        sink: StreamSink<RsVitaTransferProgress>,
+    ) {
+        if let Err(error) =
+            self
+                .run_send_with_progress(
+                    &sink
+                )
+                .await
+        {
+            let _ =
+                sink.add(
+                    RsVitaTransferProgress {
+                        file_name:
+                            String::new(),
+
+                        file_index:
+                            0,
+
+                        file_count:
+                            self.paths.len() as u32,
+
+                        file_bytes_sent:
+                            0,
+
+                        file_size:
+                            0,
+
+                        total_bytes_sent:
+                            0,
+
+                        total_size:
+                            0,
+
+                        megabytes_per_second:
+                            0.0,
+
+                        finished:
+                            true,
+
+                        canceled:
+                            false,
+
+                        error:
+                            Some(
+                                error.to_string()
+                            ),
+                    }
+                );
+        }
+    }
+
+    async fn run_send_with_progress(
+        &self,
+        sink: &StreamSink<RsVitaTransferProgress>,
+    ) -> anyhow::Result<()> {
+        /*
+        * =====================================================
+        * CALCULAR TAMAÑO TOTAL DE LA SESIÓN
+        * =====================================================
+        */
+
+        let mut total_size:
+            u64 = 0;
+
+
+        for path in &self.paths {
+            let size =
+                path
+                    .metadata()?
+                    .len();
+
+
+            total_size =
+                total_size
+                    .checked_add(
+                        size
+                    )
+                    .ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "VitaTransfer total size overflow"
+                            )
+                        }
+                    )?;
+        }
+
+
+        let file_count =
+            self.paths.len() as u32;
+
+
+        /*
+        * =====================================================
+        * OBTENER HANDSHAKE YA COMPLETADO
+        * =====================================================
+        */
+
+        let mut state_guard =
+            self
+                .handshake_state
+                .lock()
+                .await;
+
+
+        let handshake_result =
+            match state_guard.take() {
+                Some(
+                    VitaTransferHandshakeState::Ready(
+                        result
+                    )
+                ) => {
+                    result
+                }
+
+
+                Some(
+                    VitaTransferHandshakeState::Pairing(
+                        pending
+                    )
+                ) => {
+                    /*
+                    * Restauramos el estado.
+                    */
+                    *state_guard =
+                        Some(
+                            VitaTransferHandshakeState::Pairing(
+                                pending
+                            )
+                        );
+
+
+                    anyhow::bail!(
+                        "VitaTransfer pairing has not been confirmed yet"
+                    );
+                }
+
+
+                None => {
+                    anyhow::bail!(
+                        "VitaTransfer session has already been consumed"
+                    );
+                }
+            };
+
+
+        drop(state_guard);
+
+
+        /*
+        * =====================================================
+        * CONEXIÓN TCP
+        * =====================================================
+        */
+
+        let mut stream_guard =
+            self
+                .stream
+                .lock()
+                .await;
+
+
+        let stream =
+            stream_guard
+                .as_mut()
+                .ok_or_else(
+                    || {
+                        anyhow::anyhow!(
+                            "VitaTransfer connection is no longer available"
+                        )
+                    }
+                )?;
+
+
+        /*
+        * Un único estado de nonce para TODA
+        * la sesión PC -> Vita.
+        */
+        let mut send_state =
+            transfer::SendState::new()?;
+
+
+        let mut completed_bytes:
+            u64 = 0;
+
+
+        /*
+        * =====================================================
+        * ARCHIVOS
+        * =====================================================
+        */
+
+        for (
+            file_zero_index,
+            path
+        ) in self
+            .paths
+            .iter()
+            .enumerate()
+        {
+            let file_index =
+                file_zero_index as u32
+                    + 1;
+
+
+            let file_size =
+                path
+                    .metadata()?
+                    .len();
+
+
+            let file_name =
+                path
+                    .file_name()
+                    .and_then(
+                        |name| {
+                            name.to_str()
+                        }
+                    )
+                    .unwrap_or(
+                        "archivo"
+                    )
+                    .to_string();
+
+
+            /*
+            * Evento inicial.
+            *
+            * Hace posible que Flutter muestre inmediatamente
+            * el nombre del archivo aunque Rust todavía esté
+            * calculando el SHA-256.
+            */
+            let _ =
+                sink.add(
+                    RsVitaTransferProgress {
+                        file_name:
+                            file_name.clone(),
+
+                        file_index,
+
+                        file_count,
+
+                        file_bytes_sent:
+                            0,
+
+                        file_size,
+
+                        total_bytes_sent:
+                            completed_bytes,
+
+                        total_size,
+
+                        megabytes_per_second:
+                            0.0,
+
+                        finished:
+                            false,
+
+                        canceled:
+                            false,
+
+                        error:
+                            None,
+                    }
+                );
+
+
+            /*
+            * =================================================
+            * CALLBACK CORE -> BRIDGE
+            * =================================================
+            */
+
+            let mut progress_callback =
+                |progress:
+                    transfer::TransferProgress|
+                {
+                    let session_bytes =
+                        completed_bytes
+                            .saturating_add(
+                                progress
+                                    .bytes_sent
+                            );
+
+
+                    let _ =
+                        sink.add(
+                            RsVitaTransferProgress {
+                                file_name:
+                                    file_name.clone(),
+
+                                file_index,
+
+                                file_count,
+
+                                file_bytes_sent:
+                                    progress
+                                        .bytes_sent,
+
+                                file_size:
+                                    progress
+                                        .total_bytes,
+
+                                total_bytes_sent:
+                                    session_bytes,
+
+                                total_size,
+
+                                megabytes_per_second:
+                                    progress
+                                        .megabytes_per_second,
+
+                                finished:
+                                    false,
+
+                                canceled:
+                                    false,
+
+                                error:
+                                    None,
+                            }
+                        );
+                };
+
+
+            enum SendOutcome<T> {
+                Finished(T),
+                Cancelled,
+            }
+
+
+            let outcome =
+                tokio::select! {
+                    result =
+                        transfer::send_file_with_progress(
+                            stream,
+
+                            &handshake_result
+                                .keys
+                                .session_key,
+
+                            &handshake_result
+                                .keys
+                                .initiator_to_responder_key,
+
+                            &mut send_state,
+
+                            path,
+
+                            Some(
+                                &mut progress_callback
+                            ),
+                        )
+                    => {
+                        SendOutcome::Finished(
+                            result
+                        )
+                    }
+
+
+                    _ =
+                        self.cancel.cancelled()
+                    => {
+                        SendOutcome::Cancelled
+                    }
+                };
+
+
+            let stats =
+                match outcome {
+                    SendOutcome::Finished(
+                        result
+                    ) => {
+                        result?
+                    }
+
+
+                    SendOutcome::Cancelled => {
+                        /*
+                        * Al abandonar send_file_with_progress(),
+                        * cerramos el socket.
+                        *
+                        * Vita detectará la desconexión y abortará
+                        * el archivo incompleto.
+                        */
+                        *stream_guard =
+                            None;
+
+
+                        let _ =
+                            sink.add(
+                                RsVitaTransferProgress {
+                                    file_name:
+                                        file_name.clone(),
+
+                                    file_index,
+
+                                    file_count,
+
+                                    file_bytes_sent:
+                                        0,
+
+                                    file_size,
+
+                                    total_bytes_sent:
+                                        completed_bytes,
+
+                                    total_size,
+
+                                    megabytes_per_second:
+                                        0.0,
+
+                                    finished:
+                                        true,
+
+                                    canceled:
+                                        true,
+
+                                    error:
+                                        None,
+                                }
+                            );
+
+
+                        return Ok(());
+                    }
+                };
+
+
+            completed_bytes =
+                completed_bytes
+                    .saturating_add(
+                        stats.bytes_sent
+                    );
+        }
+
+
+        /*
+        * =====================================================
+        * CIERRE NORMAL
+        * =====================================================
+        */
+
+        transfer::close_session(
+            stream
+        )
+        .await?;
+
+
+        *stream_guard =
+            None;
+
+
+        /*
+        * Evento final de toda la sesión.
+        */
+        let _ =
+            sink.add(
+                RsVitaTransferProgress {
+                    file_name:
+                        self
+                            .paths
+                            .last()
+                            .and_then(
+                                |path| {
+                                    path
+                                        .file_name()
+                                }
+                            )
+                            .and_then(
+                                |name| {
+                                    name.to_str()
+                                }
+                            )
+                            .unwrap_or(
+                                "archivo"
+                            )
+                            .to_string(),
+
+                    file_index:
+                        file_count,
+
+                    file_count,
+
+                    file_bytes_sent:
+                        self
+                            .paths
+                            .last()
+                            .and_then(
+                                |path| {
+                                    path
+                                        .metadata()
+                                        .ok()
+                                }
+                            )
+                            .map(
+                                |metadata| {
+                                    metadata.len()
+                                }
+                            )
+                            .unwrap_or(0),
+
+                    file_size:
+                        self
+                            .paths
+                            .last()
+                            .and_then(
+                                |path| {
+                                    path
+                                        .metadata()
+                                        .ok()
+                                }
+                            )
+                            .map(
+                                |metadata| {
+                                    metadata.len()
+                                }
+                            )
+                            .unwrap_or(0),
+
+                    total_bytes_sent:
+                        completed_bytes,
+
+                    total_size,
+
+                    megabytes_per_second:
+                        0.0,
+
+                    finished:
+                        true,
+
+                    canceled:
+                        false,
+
+                    error:
+                        None,
+                }
+            );
+
+
+        Ok(())
     }
 
 

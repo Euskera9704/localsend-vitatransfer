@@ -6,6 +6,7 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `run_send_with_progress`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `VitaTransferHandshakeState`
 
 Future<RsVitaTransferDiscovery> startVitatransferDiscovery() => RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery();
@@ -25,11 +26,15 @@ abstract class RsVitaTransferDiscovery implements RustOpaqueInterface {
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferSendSession>>
 abstract class RsVitaTransferSendSession implements RustOpaqueInterface {
+  Future<void> cancel();
+
   Future<void> confirmPairing({required bool accepted});
 
   Future<String?> pairingCode();
 
   Future<RsVitaTransferSendResult> send();
+
+  Stream<RsVitaTransferProgress> sendWithProgress();
 }
 
 class RsVitaTransferDevice {
@@ -67,6 +72,65 @@ class RsVitaTransferDevice {
           identityPublic == other.identityPublic &&
           canSend == other.canSend &&
           canReceive == other.canReceive;
+}
+
+class RsVitaTransferProgress {
+  final String fileName;
+  final int fileIndex;
+  final int fileCount;
+  final BigInt fileBytesSent;
+  final BigInt fileSize;
+  final BigInt totalBytesSent;
+  final BigInt totalSize;
+  final double megabytesPerSecond;
+  final bool finished;
+  final bool canceled;
+  final String? error;
+
+  const RsVitaTransferProgress({
+    required this.fileName,
+    required this.fileIndex,
+    required this.fileCount,
+    required this.fileBytesSent,
+    required this.fileSize,
+    required this.totalBytesSent,
+    required this.totalSize,
+    required this.megabytesPerSecond,
+    required this.finished,
+    required this.canceled,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      fileName.hashCode ^
+      fileIndex.hashCode ^
+      fileCount.hashCode ^
+      fileBytesSent.hashCode ^
+      fileSize.hashCode ^
+      totalBytesSent.hashCode ^
+      totalSize.hashCode ^
+      megabytesPerSecond.hashCode ^
+      finished.hashCode ^
+      canceled.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsVitaTransferProgress &&
+          runtimeType == other.runtimeType &&
+          fileName == other.fileName &&
+          fileIndex == other.fileIndex &&
+          fileCount == other.fileCount &&
+          fileBytesSent == other.fileBytesSent &&
+          fileSize == other.fileSize &&
+          totalBytesSent == other.totalBytesSent &&
+          totalSize == other.totalSize &&
+          megabytesPerSecond == other.megabytesPerSecond &&
+          finished == other.finished &&
+          canceled == other.canceled &&
+          error == other.error;
 }
 
 class RsVitaTransferSendResult {

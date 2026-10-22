@@ -61,6 +61,14 @@ pub struct TransferStats {
     pub megabytes_per_second: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TransferProgress {
+    pub bytes_sent: u64,
+    pub total_bytes: u64,
+    pub elapsed_seconds: f64,
+    pub megabytes_per_second: f64,
+}
+
 impl SendState {
     pub fn new() -> Result<Self> {
         /*
@@ -251,12 +259,18 @@ fn metadata_hmac(
     Ok(result)
 }
 
-pub async fn send_file(
+pub async fn send_file_with_progress(
     stream: &mut TcpStream,
     session_key: &[u8; 32],
     send_key: &[u8; 32],
     state: &mut SendState,
     path: &Path,
+    mut on_progress: Option<
+        &mut (
+            dyn FnMut(TransferProgress)
+                + Send
+        )
+    >,
 ) -> Result<TransferStats> {
     /*
      * =====================================================
@@ -638,6 +652,27 @@ pub async fn send_file(
                 0.0
             };
 
+        if let Some(
+            callback
+        ) = on_progress.as_mut() {
+            callback(
+                TransferProgress {
+                    bytes_sent:
+                        total_sent,
+
+                    total_bytes:
+                        filesize,
+
+                    elapsed_seconds:
+                        elapsed,
+
+                    megabytes_per_second:
+                        speed,
+                }
+            );
+        }
+
+
         println!(
             "{sent_mb:.2} / {total_mb:.2} MB   {percent:6.2}%   {speed:.2} MB/s"
         );
@@ -744,6 +779,24 @@ pub async fn send_file(
             megabytes_per_second,
         }
     )
+}
+
+pub async fn send_file(
+    stream: &mut TcpStream,
+    session_key: &[u8; 32],
+    send_key: &[u8; 32],
+    state: &mut SendState,
+    path: &Path,
+) -> Result<TransferStats> {
+    send_file_with_progress(
+        stream,
+        session_key,
+        send_key,
+        state,
+        path,
+        None,
+    )
+    .await
 }
 
 pub async fn close_session(

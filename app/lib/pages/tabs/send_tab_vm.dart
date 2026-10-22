@@ -6,6 +6,7 @@ import 'package:localsend_app/model/send_mode.dart';
 import 'package:localsend_app/pages/progress_page.dart';
 import 'package:localsend_app/pages/send_page.dart';
 import 'package:localsend_app/pages/tabs/send_tab.dart';
+import 'package:localsend_app/pages/vitatransfer_progress_page.dart';
 import 'package:localsend_app/pages/web_share_page.dart';
 import 'package:localsend_app/provider/favorites_provider.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
@@ -22,6 +23,7 @@ import 'package:localsend_isolates/model/session_status.dart';
 import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
+
 
 class SendTabVm {
   final SendMode sendMode;
@@ -381,26 +383,31 @@ final sendTabVmProvider = ViewProvider((ref) {
 
           /*
           * =====================================================
-          * ENVIAR
+          * PANTALLA DE PROGRESO VITATRANSFER
           * =====================================================
+          *
+          * El envío empieza dentro de VitaTransferProgressPage
+          * al escuchar session.sendWithProgress().
+          *
+          * NO debemos llamar también a session.send(),
+          * porque la sesión VitaTransfer es one-shot.
           */
-
-          final result =
-              await session.send();
-
 
           if (!context.mounted) {
             return;
           }
 
 
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(
-            SnackBar(
-              content: Text(
-                'VitaTransfer: ${result.filesSent} archivo(s) enviado(s) correctamente.',
-              ),
+          await context.push(
+            () => VitaTransferProgressPage(
+              session:
+                  session,
+
+              files:
+                  files,
+
+              showAppBar:
+                  true,
             ),
           );
         } catch (e) {
