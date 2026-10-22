@@ -23,8 +23,8 @@ async fn main() -> anyhow::Result<()> {
      * Argumento 1:
      * IP Vita
      *
-     * Argumento 2:
-     * archivo
+     * Argumentos siguientes:
+     * uno o varios archivos
      */
 
     let mut args =
@@ -38,26 +38,30 @@ async fn main() -> anyhow::Result<()> {
                     .to_string()
             });
 
-    let file_path =
-        match args.next() {
-            Some(path) => {
-                PathBuf::from(
-                    path
-                )
-            }
+    let file_paths:
+        Vec<PathBuf> =
+        args
+            .map(
+                PathBuf::from
+            )
+            .collect();
 
-            None => {
-                println!(
-                    "Uso:"
-                );
+    if file_paths.is_empty() {
+        println!(
+            "Uso:"
+        );
 
-                println!(
-                    "cargo run --example vitatransfer_connect --features vitatransfer -- <IP_VITA> <ARCHIVO>"
-                );
+        println!(
+            "cargo run --example vitatransfer_connect --features vitatransfer -- <IP_VITA> <ARCHIVO1> [ARCHIVO2] [ARCHIVO3] ..."
+        );
 
-                return Ok(());
-            }
-        };
+        return Ok(());
+    }
+
+    println!(
+        "Archivos preparados: {}",
+        file_paths.len()
+    );
 
     /*
      * =====================================================
@@ -125,28 +129,38 @@ async fn main() -> anyhow::Result<()> {
                 pending
             ) => {
                 println!();
+
                 println!(
                     "========================================"
                 );
+
                 println!(
                     "NEW DEVICE - PAIRING REQUIRED"
                 );
+
                 println!();
+
                 println!(
                     "PAIRING CODE:"
                 );
+
                 println!();
+
                 println!(
                     "              {}",
                     pending.pairing_code
                 );
+
                 println!();
+
                 println!(
                     "Comprueba que aparece el mismo codigo en la Vita."
                 );
+
                 println!(
                     "========================================"
                 );
+
                 println!();
 
                 print!(
@@ -189,6 +203,7 @@ async fn main() -> anyhow::Result<()> {
         };
 
     println!();
+
     println!(
         "VITATRANSFER HANDSHAKE COMPLETE"
     );
@@ -203,35 +218,132 @@ async fn main() -> anyhow::Result<()> {
 
     /*
      * =====================================================
-     * ESTADO DE NONCES PARA TODA LA SESION
+     * IMPORTANTE:
+     *
+     * UN SOLO ESTADO DE NONCES
+     * PARA TODA LA SESION.
      * =====================================================
      */
 
     let mut send_state =
         transfer::SendState::new()?;
 
+    let mut total_bytes =
+        0u64;
+
+    let mut files_sent =
+        0usize;
+
     /*
      * =====================================================
-     * PRIMER ARCHIVO REAL
+     * ENVIAR TODOS LOS ARCHIVOS
      * =====================================================
      */
 
-    transfer::send_file(
-        &mut stream,
+    for (
+        index,
+        file_path,
+    ) in file_paths
+        .iter()
+        .enumerate()
+    {
+        println!();
+        println!(
+            "########################################"
+        );
 
-        &result
-            .keys
-            .session_key,
+        println!(
+            "ARCHIVO {}/{}",
+            index + 1,
+            file_paths.len()
+        );
 
-        &result
-            .keys
-            .initiator_to_responder_key,
+        println!(
+            "########################################"
+        );
 
-        &mut send_state,
+        let stats =
+            transfer::send_file(
+                &mut stream,
 
-        &file_path,
-    )
-    .await?;
+                &result
+                    .keys
+                    .session_key,
+
+                &result
+                    .keys
+                    .initiator_to_responder_key,
+
+                &mut send_state,
+
+                file_path,
+            )
+            .await?;
+
+        files_sent += 1;
+
+        total_bytes +=
+            stats.bytes_sent;
+
+        println!();
+
+        println!(
+            "Archivo {}/{} completado.",
+            index + 1,
+            file_paths.len()
+        );
+
+        println!(
+            "Velocidad efectiva: {:.2} MB/s",
+            stats.megabytes_per_second
+        );
+
+        /*
+         * NO recreamos SendState aquí.
+         *
+         * Por tanto:
+         *
+         * archivo 1:
+         * nonce counter 0,1,2...
+         *
+         * archivo 2:
+         * continúa donde terminó archivo 1.
+         *
+         * archivo 3:
+         * continúa otra vez.
+         */
+    }
+
+    /*
+     * =====================================================
+     * RESUMEN
+     * =====================================================
+     */
+
+    println!();
+
+    println!(
+        "========================================"
+    );
+
+    println!(
+        "SESSION TRANSFER COMPLETE"
+    );
+
+    println!(
+        "========================================"
+    );
+
+    println!(
+        "Archivos verificados: {}",
+        files_sent
+    );
+
+    println!(
+        "Datos transferidos: {:.2} MB",
+        total_bytes as f64
+            / (1024.0 * 1024.0)
+    );
 
     /*
      * =====================================================
