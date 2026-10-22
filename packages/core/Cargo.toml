@@ -68,6 +68,10 @@ required-features = ["vitatransfer"]
 name = "vitatransfer_bidirectional"
 required-features = ["vitatransfer"]
 
+[[example]]
+name = "vitatransfer_discovery"
+required-features = ["vitatransfer"]
+
 [features]
 default = []
 crypto = ["ed25519-dalek", "rcgen", "rsa", "sha2", "tokio-util"]
