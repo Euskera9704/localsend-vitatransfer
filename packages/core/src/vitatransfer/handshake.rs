@@ -41,29 +41,50 @@ use super::protocol::{
     PROTOCOL_LABEL,
     SESSION_READY,
 };
+use super::trust_store;
 
 type HmacSha256 = Hmac<Sha256>;
 
 pub struct SessionKeys {
     pub session_key: [u8; 32],
-    pub initiator_to_responder_key: [u8; 32],
-    pub responder_to_initiator_key: [u8; 32],
+
+    pub initiator_to_responder_key:
+        [u8; 32],
+
+    pub responder_to_initiator_key:
+        [u8; 32],
 }
 
 pub struct HandshakeResult {
-    pub vita_identity_public: [u8; 32],
-    pub transcript_hash: [u8; 32],
-    pub keys: SessionKeys,
+    pub vita_identity_public:
+        [u8; 32],
+
+    pub transcript_hash:
+        [u8; 32],
+
+    pub keys:
+        SessionKeys,
 }
 
 pub struct PendingPairing {
-    pub pairing_code: String,
-    pub result: HandshakeResult,
+    pub pairing_code:
+        String,
+
+    pub result:
+        HandshakeResult,
+
+    save_vita_on_success:
+        bool,
 }
 
 pub enum HandshakeStatus {
-    Established(HandshakeResult),
-    PairingRequired(PendingPairing),
+    Established(
+        HandshakeResult
+    ),
+
+    PairingRequired(
+        PendingPairing
+    ),
 }
 
 fn derive_directional_key(
@@ -73,7 +94,7 @@ fn derive_directional_key(
 ) -> Result<[u8; 32]> {
     let mut mac =
         HmacSha256::new_from_slice(
-            session_key,
+            session_key
         )
         .map_err(|_| {
             anyhow!(
@@ -81,11 +102,17 @@ fn derive_directional_key(
             )
         })?;
 
-    mac.update(label);
-    mac.update(transcript_hash);
+    mac.update(
+        label
+    );
+
+    mac.update(
+        transcript_hash
+    );
 
     let result =
-        mac.finalize().into_bytes();
+        mac.finalize()
+            .into_bytes();
 
     let mut key =
         [0u8; 32];
@@ -128,7 +155,9 @@ fn make_pairing_code(
         ])
         % 1_000_000;
 
-    format!("{value:06}")
+    format!(
+        "{value:06}"
+    )
 }
 
 async fn receive_session_ready(
@@ -170,7 +199,7 @@ pub async fn perform_handshake(
 ) -> Result<HandshakeStatus> {
     /*
      * =====================================================
-     * IDENTIDAD ED25519 DEL PC
+     * IDENTIDAD PC
      * =====================================================
      */
 
@@ -194,14 +223,12 @@ pub async fn perform_handshake(
         );
 
     let ephemeral_public_bytes =
-        *ephemeral_public.as_bytes();
+        *ephemeral_public
+            .as_bytes();
 
     /*
      * =====================================================
      * PC -> VITA
-     *
-     * 32 bytes Ed25519
-     * 32 bytes X25519
      * =====================================================
      */
 
@@ -226,9 +253,6 @@ pub async fn perform_handshake(
     /*
      * =====================================================
      * VITA -> PC
-     *
-     * 32 bytes Ed25519
-     * 32 bytes X25519
      * =====================================================
      */
 
@@ -274,12 +298,6 @@ pub async fn perform_handshake(
      * =====================================================
      * TRANSCRIPT
      * =====================================================
-     *
-     * PROTOCOL_LABEL
-     * + PC identity
-     * + Vita identity
-     * + PC ephemeral
-     * + Vita ephemeral
      */
 
     let mut transcript =
@@ -288,7 +306,7 @@ pub async fn perform_handshake(
                 + 32
                 + 32
                 + 32
-                + 32,
+                + 32
         );
 
     transcript.extend_from_slice(
@@ -319,13 +337,14 @@ pub async fn perform_handshake(
     let mut transcript_hash =
         [0u8; 32];
 
-    transcript_hash.copy_from_slice(
-        &digest
-    );
+    transcript_hash
+        .copy_from_slice(
+            &digest
+        );
 
     /*
      * =====================================================
-     * FIRMA DEL PC
+     * FIRMA PC
      * =====================================================
      */
 
@@ -336,7 +355,8 @@ pub async fn perform_handshake(
 
     stream
         .write_all(
-            &pc_signature.to_bytes()
+            &pc_signature
+                .to_bytes()
         )
         .await
         .context(
@@ -349,7 +369,7 @@ pub async fn perform_handshake(
 
     /*
      * =====================================================
-     * FIRMA DE LA VITA
+     * FIRMA VITA
      * =====================================================
      */
 
@@ -381,7 +401,7 @@ pub async fn perform_handshake(
     vita_verifying_key
         .verify(
             &transcript,
-            &vita_signature,
+            &vita_signature
         )
         .context(
             "Vita Ed25519 signature verification failed"
@@ -390,6 +410,34 @@ pub async fn perform_handshake(
     println!(
         "Vita Ed25519 signature: OK"
     );
+
+    /*
+     * =====================================================
+     * COMPROBAR TRUST LOCAL
+     * =====================================================
+     *
+     * Importante:
+     *
+     * primero verificamos la firma.
+     *
+     * Después comprobamos si esa identidad
+     * concreta está guardada.
+     */
+
+    let vita_trusted_locally =
+        trust_store::is_trusted(
+            &vita_identity_public
+        )?;
+
+    if vita_trusted_locally {
+        println!(
+            "PC trust: Vita identity VERIFIED"
+        );
+    } else {
+        println!(
+            "PC trust: Vita identity NOT YET TRUSTED"
+        );
+    }
 
     /*
      * =====================================================
@@ -414,7 +462,7 @@ pub async fn perform_handshake(
 
     /*
      * =====================================================
-     * HKDF-SHA256
+     * HKDF
      * =====================================================
      */
 
@@ -434,8 +482,11 @@ pub async fn perform_handshake(
 
     let hkdf =
         Hkdf::<Sha256>::new(
-            Some(HKDF_SALT),
-            shared_secret.as_bytes(),
+            Some(
+                HKDF_SALT
+            ),
+            shared_secret
+                .as_bytes(),
         );
 
     let mut session_key =
@@ -443,7 +494,7 @@ pub async fn perform_handshake(
 
     hkdf.expand(
         &hkdf_info,
-        &mut session_key,
+        &mut session_key
     )
     .map_err(|_| {
         anyhow!(
@@ -465,14 +516,14 @@ pub async fn perform_handshake(
         derive_directional_key(
             &session_key,
             DATA_I2R_LABEL,
-            &transcript_hash,
+            &transcript_hash
         )?;
 
     let responder_to_initiator_key =
         derive_directional_key(
             &session_key,
             DATA_R2I_LABEL,
-            &transcript_hash,
+            &transcript_hash
         )?;
 
     println!(
@@ -483,16 +534,20 @@ pub async fn perform_handshake(
         HandshakeResult {
             vita_identity_public,
             transcript_hash,
-            keys: SessionKeys {
-                session_key,
-                initiator_to_responder_key,
-                responder_to_initiator_key,
-            },
+
+            keys:
+                SessionKeys {
+                    session_key,
+
+                    initiator_to_responder_key,
+
+                    responder_to_initiator_key,
+                },
         };
 
     /*
      * =====================================================
-     * TRUST STATUS
+     * TRUST STATUS DE LA VITA
      * =====================================================
      */
 
@@ -508,13 +563,26 @@ pub async fn perform_handshake(
             "Could not receive Vita trust status"
         )?;
 
-    match trust_status[0] {
+    match (
+        vita_trusted_locally,
+        trust_status[0],
+    ) {
         /*
-         * Ya emparejado.
+         * =================================================
+         * AMBOS SE CONOCEN
+         * =================================================
          */
-        1 => {
+
+        (
+            true,
+            1,
+        ) => {
             println!(
-                "Vita trust: TRUSTED DEVICE VERIFIED"
+                "Vita trust: PC identity VERIFIED"
+            );
+
+            println!(
+                "Mutual trust: VERIFIED"
             );
 
             receive_session_ready(
@@ -530,30 +598,110 @@ pub async fn perform_handshake(
         }
 
         /*
-         * Dispositivo nuevo.
+         * =================================================
+         * PC CONOCE VITA,
+         * VITA YA NO CONOCE PC
+         *
+         * Re-pair normal.
+         * =================================================
          */
-        0 => {
-            let pairing_code =
-                make_pairing_code(
-                    &result.keys.session_key,
-                    &result.transcript_hash,
-                );
 
+        (
+            true,
+            0,
+        ) => {
             println!(
                 "Vita trust: PAIRING REQUIRED"
             );
+
+            let pairing_code =
+                make_pairing_code(
+                    &result
+                        .keys
+                        .session_key,
+
+                    &result
+                        .transcript_hash,
+                );
 
             Ok(
                 HandshakeStatus::PairingRequired(
                     PendingPairing {
                         pairing_code,
                         result,
+
+                        save_vita_on_success:
+                            false,
                     }
                 )
             )
         }
 
-        other => {
+        /*
+         * =================================================
+         * PRIMER PAIRING MUTUO
+         * =================================================
+         */
+
+        (
+            false,
+            0,
+        ) => {
+            println!(
+                "Vita trust: PAIRING REQUIRED"
+            );
+
+            println!(
+                "Mutual trust: new Vita identity"
+            );
+
+            let pairing_code =
+                make_pairing_code(
+                    &result
+                        .keys
+                        .session_key,
+
+                    &result
+                        .transcript_hash,
+                );
+
+            Ok(
+                HandshakeStatus::PairingRequired(
+                    PendingPairing {
+                        pairing_code,
+                        result,
+
+                        save_vita_on_success:
+                            true,
+                    }
+                )
+            )
+        }
+
+        /*
+         * =================================================
+         * TRUST ASIMETRICO
+         *
+         * Vita reconoce al PC,
+         * pero PC NO reconoce a Vita.
+         *
+         * NO hacemos TOFU silencioso.
+         * =================================================
+         */
+
+        (
+            false,
+            1,
+        ) => {
+            bail!(
+                "Mutual trust mismatch: Vita trusts this PC, but this PC does not trust the presented Vita identity. A new SAS pairing is required."
+            );
+        }
+
+        (
+            _,
+            other,
+        ) => {
             bail!(
                 "Invalid Vita trust status: 0x{other:02X}"
             );
@@ -567,9 +715,7 @@ pub async fn finish_pairing(
     accepted: bool,
 ) -> Result<HandshakeResult> {
     /*
-     * El Python manda:
-     *
-     * 1 = codigo coincide / aceptar
+     * 1 = aceptar
      * 0 = rechazar
      */
 
@@ -590,8 +736,7 @@ pub async fn finish_pairing(
         )?;
 
     /*
-     * La Vita devuelve el resultado final
-     * del emparejamiento.
+     * Resultado final de Vita.
      */
 
     let mut final_result =
@@ -612,21 +757,46 @@ pub async fn finish_pairing(
         );
     }
 
-    if final_result[0] != 1 {
+    if final_result[0]
+        != 1
+    {
         bail!(
             "PAIRING REJECTED by Vita"
         );
     }
 
+    /*
+     * =====================================================
+     * AHORA SI:
+     *
+     * La Vita ha aceptado.
+     * El PC ha aceptado.
+     * El SAS ha sido comprobado.
+     *
+     * Podemos persistir la identidad Vita.
+     * =====================================================
+     */
+
+    if pending
+        .save_vita_on_success
+    {
+        let added =
+            trust_store::add_trusted(
+                &pending
+                    .result
+                    .vita_identity_public
+            )?;
+
+        if added {
+            println!(
+                "Vita identity saved to PC trust store."
+            );
+        }
+    }
+
     println!(
         "PAIRING SUCCESS"
     );
-
-    /*
-     * Después del pairing exitoso el
-     * protocolo continúa exactamente
-     * igual que para un peer ya confiable.
-     */
 
     receive_session_ready(
         stream
