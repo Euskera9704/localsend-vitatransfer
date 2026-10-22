@@ -60,6 +60,10 @@ required-features = ["http"]
 name = "vitatransfer_connect"
 required-features = ["vitatransfer"]
 
+[[example]]
+name = "vitatransfer_receive"
+required-features = ["vitatransfer"]
+
 [features]
 default = []
 crypto = ["ed25519-dalek", "rcgen", "rsa", "sha2", "tokio-util"]
