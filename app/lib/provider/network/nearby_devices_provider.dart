@@ -8,6 +8,13 @@ import 'package:localsend_app/provider/logging/discovery_logs_provider.dart';
 import 'package:localsend_isolates/isolate.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:localsend_app/pages/receive_page.dart';
+import 'package:localsend_app/pages/vitatransfer_progress_page.dart';
+import 'package:localsend_app/provider/selection/selected_receiving_files_provider.dart';
+import 'package:localsend_isolates/model/dto/file_dto.dart';
+import 'package:localsend_isolates/model/session_status.dart';
+import 'package:mime/mime.dart';
+import 'package:routerino/routerino.dart';
 
 /// This provider is responsible for:
 /// - Scanning the network for other LocalSend instances
@@ -27,8 +34,7 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
   final FavoritesService _favoriteService;
   final DiscoveryLogger _discoveryLogger;
 
-  static const Duration _vitaTransferTimeout =
-    Duration(seconds: 6);
+  static const Duration _vitaTransferTimeout = Duration(seconds: 6);
 
   final Map<String, Timer> _vitaTransferExpiryTimers = {};
 
@@ -46,20 +52,16 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
     /*
      * Cada anuncio nuevo cancela el timeout anterior.
      */
-    _vitaTransferExpiryTimers
-        .remove(fingerprint)
-        ?.cancel();
+    _vitaTransferExpiryTimers.remove(fingerprint)?.cancel();
 
     /*
      * Si durante 6 segundos no recibimos otro anuncio,
      * consideramos que VitaTransfer ya no está disponible.
      */
-    _vitaTransferExpiryTimers[fingerprint] =
-        Timer(
+    _vitaTransferExpiryTimers[fingerprint] = Timer(
       _vitaTransferTimeout,
       () {
-        _vitaTransferExpiryTimers
-            .remove(fingerprint);
+        _vitaTransferExpiryTimers.remove(fingerprint);
 
         redux.dispatch(
           RemoveVitaTransferDeviceAction(
@@ -72,10 +74,7 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
 
   @override
   void dispose() {
-    for (
-      final timer
-          in _vitaTransferExpiryTimers.values
-    ) {
+    for (final timer in _vitaTransferExpiryTimers.values) {
       timer.cancel();
     }
 
@@ -100,11 +99,287 @@ class NearbyDevicesService extends ReduxNotifier<NearbyDevicesState> {
 class StartDiscoveryListener extends AsyncReduxAction<NearbyDevicesService, NearbyDevicesState> {
   @override
   Future<NearbyDevicesState> reduce() async {
-    final stream = external(notifier._isolateController).dispatchTakeResult(IsolateDiscoveryListenAction());
+    /*
+     * Escuchamos primero las ofertas Vita -> PC.
+     *
+     * Es importante registrar este listener antes
+     * de arrancar el discovery normal para no perder
+     * una oferta del Stream broadcast.
+     */
+    final vitaIncomingStream =
+        external(
+          notifier._isolateController,
+        ).dispatchTakeResult(
+          IsolateVitaTransferIncomingListenAction(),
+        );
+
+    vitaIncomingStream.listen(
+      (offer) {
+        notifier._discoveryLogger.addLog(
+          '[VitaTransfer/Main] Incoming offer: '
+          '${offer.sessionId} | '
+          '${offer.senderName} | '
+          '${offer.senderHost}',
+        );
+
+        /*
+        * Convertimos el manifest VitaTransfer
+        * al FileDto que ya entiende ReceivePage.
+        */
+        final files = offer.files.map((file) {
+          final mime = lookupMimeType(file.fileName) ?? 'application/octet-stream';
+
+          return FileDto(
+            id: file.id,
+            fileName: file.fileName,
+            size: file.size.toInt(),
+            fileType: decodeFromMime(mime),
+            hash: null,
+            preview: null,
+            metadata: null,
+          );
+        }).toList();
+
+        for (final file in files) {
+          notifier._discoveryLogger.addLog(
+            '[VitaTransfer/Main]   '
+            '${file.fileName} '
+            '(${file.size} bytes)',
+          );
+        }
+
+        /*
+        * Representación del remitente para la UI
+        * estándar de LocalSend.
+        */
+        final sender = Device(
+          signalingId: null,
+          ip: offer.senderHost,
+          version: 'VitaTransfer',
+          port: 5002,
+          https: false,
+          fingerprint: offer.senderFingerprint,
+          alias: offer.senderName,
+          deviceModel: 'PS Vita',
+          deviceType: DeviceType.mobile,
+          download: false,
+          transport: DeviceTransport.vitaTransfer,
+          channels: const [],
+        );
+
+        /*
+        * ReceivePage utiliza este provider para saber
+        * qué archivos están seleccionados.
+        *
+        * De momento quedan seleccionados todos,
+        * igual que en LocalSend normal.
+        */
+        Routerino.context.notifier(selectedReceivingFilesProvider).setFiles(files);
+
+        /*
+        * ViewModel VitaTransfer para ReceivePage.
+        *
+        * Aceptar/Rechazar todavía NO ejecutan
+        * comandos del protocolo.
+        */
+
+        bool decisionStarted = false;
+
+        Future<void> rejectIncomingOffer() async {
+          try {
+            await external(
+              notifier._isolateController,
+            ).dispatchAsync(
+              IsolateVitaTransferRejectIncomingAction(
+                sessionId: offer.sessionId,
+              ),
+            );
+
+            notifier._discoveryLogger.addLog(
+              '[VitaTransfer/Main] '
+              'Incoming session rejected successfully: '
+              '${offer.sessionId}',
+            );
+          } catch (error) {
+            notifier._discoveryLogger.addLog(
+              '[VitaTransfer/Main] '
+              'Reject ERROR for ${offer.sessionId}: '
+              '$error',
+            );
+          }
+        }
+
+        Future<void> acceptIncomingOffer() async {
+          try {
+            final progressStream =
+                external(
+                  notifier._isolateController,
+                ).dispatchTakeResult(
+                  IsolateVitaTransferAcceptIncomingWithProgressAction(
+                    sessionId: offer.sessionId,
+                  ),
+                );
+
+            notifier._discoveryLogger.addLog(
+              '[VitaTransfer/Main] '
+              'Opening receive progress page for '
+              '${offer.sessionId}',
+            );
+
+            /*
+            * Sustituimos ReceivePage por la misma pantalla de
+            * progreso que ya usa PC -> Vita.
+            *
+            * Es importante usar pushReplacement:
+            *
+            * ReceivePage
+            *      ↓
+            * VitaTransferProgressPage
+            *
+            * y no:
+            *
+            * ReceivePage
+            *      ↓
+            * push
+            *      ↓
+            * ProgressPage
+            *
+            * porque al pulsar "Hecho" volveríamos otra vez
+            * a la pantalla Aceptar/Rechazar.
+            */
+            await Routerino.context.pushReplacement(
+              () => VitaTransferProgressPage.receiving(
+                      progressStream: progressStream,
+                      files: files,
+
+                      onCancel: () async {
+                        notifier._discoveryLogger.addLog(
+                          '[VitaTransfer/Main] '
+                          'CANCEL pressed for ${offer.sessionId}',
+                        );
+
+                        await external(
+                          notifier._isolateController,
+                        ).dispatchAsync(
+                          IsolateVitaTransferCancelIncomingTransferAction(
+                            sessionId: offer.sessionId,
+                          ),
+                        );
+
+                        notifier._discoveryLogger.addLog(
+                          '[VitaTransfer/Main] '
+                          'Incoming transfer cancelled: '
+                          '${offer.sessionId}',
+                        );
+                      },
+                    ),
+            );
+          } catch (error) {
+            notifier._discoveryLogger.addLog(
+              '[VitaTransfer/Main] '
+              'Accept/transfer ERROR for '
+              '${offer.sessionId}: $error',
+            );
+          }
+        }
+
+        final receiveProvider = ViewProvider((ref) {
+          return ReceivePageVm(
+            status: SessionStatus.waiting,
+            sender: sender,
+            showSenderInfo: false,
+            files: files,
+            message: null,
+
+            /*
+            * Aceptar todavía no inicia la transferencia.
+            * Será el siguiente paso después de validar Rechazar.
+            */
+            onAccept: () {
+              if (decisionStarted) {
+                return;
+              }
+
+              decisionStarted = true;
+
+              notifier._discoveryLogger.addLog(
+                '[VitaTransfer/Main] '
+                'ACCEPT pressed for ${offer.sessionId}',
+              );
+
+              unawaited(
+                acceptIncomingOffer(),
+              );
+            },
+
+            /*
+            * ReceivePage puede llamar a onDecline más de una vez:
+            * una al pulsar Rechazar y otra al cerrarse la página.
+            */
+            onDecline: () {
+              if (decisionStarted) {
+                return;
+              }
+
+              decisionStarted = true;
+
+              notifier._discoveryLogger.addLog(
+                '[VitaTransfer/Main] '
+                'DECLINE pressed for ${offer.sessionId}',
+              );
+
+              unawaited(
+                rejectIncomingOffer(),
+              );
+            },
+
+            onClose: () {
+              notifier._discoveryLogger.addLog(
+                '[VitaTransfer/Main] '
+                'CLOSE pressed for ${offer.sessionId}',
+              );
+            },
+          );
+        });
+
+        /*
+        * Abrimos la pantalla estándar de recepción.
+        */
+        Routerino.context.push(
+          () => ReceivePage(receiveProvider),
+        );
+      },
+      onError: (Object error) {
+        notifier._discoveryLogger.addLog(
+          '[VitaTransfer/Main] '
+          'Incoming offer stream ERROR: $error',
+        );
+      },
+    );
+
+    /*
+     * Discovery normal de LocalSend + VitaTransfer.
+     */
+    final stream =
+        external(
+          notifier._isolateController,
+        ).dispatchTakeResult(
+          IsolateDiscoveryListenAction(),
+        );
+
     await for (final device in stream) {
-      await dispatchAsync(RegisterDeviceAction(device));
-      notifier._discoveryLogger.addLog('[DISCOVER] ${device.alias} (${device.ip}, model: ${device.deviceModel})');
+      await dispatchAsync(
+        RegisterDeviceAction(device),
+      );
+
+      notifier._discoveryLogger.addLog(
+        '[DISCOVER] '
+        '${device.alias} '
+        '(${device.ip}, '
+        'model: ${device.deviceModel})',
+      );
     }
+
     return state;
   }
 }
@@ -143,10 +418,7 @@ class RegisterDeviceAction extends AsyncReduxAction<NearbyDevicesService, Nearby
       await Future.microtask(() {});
     }
 
-    if (
-      device.transport ==
-          DeviceTransport.vitaTransfer
-    ) {
+    if (device.transport == DeviceTransport.vitaTransfer) {
       notifier._refreshVitaTransferExpiry(
         device.fingerprint,
       );
@@ -157,11 +429,7 @@ class RegisterDeviceAction extends AsyncReduxAction<NearbyDevicesService, Nearby
   }
 }
 
-class RemoveVitaTransferDeviceAction
-    extends ReduxAction<
-        NearbyDevicesService,
-        NearbyDevicesState
-    > {
+class RemoveVitaTransferDeviceAction extends ReduxAction<NearbyDevicesService, NearbyDevicesState> {
   final String fingerprint;
 
   RemoveVitaTransferDeviceAction(
@@ -173,8 +441,7 @@ class RemoveVitaTransferDeviceAction
 
   @override
   NearbyDevicesState reduce() {
-    final device =
-        state.devices[fingerprint];
+    final device = state.devices[fingerprint];
 
     /*
      * Si ya no existe, no hacemos nada.
@@ -188,15 +455,11 @@ class RemoveVitaTransferDeviceAction
      * esta acción solamente puede eliminar
      * dispositivos VitaTransfer.
      */
-    if (
-      device.transport !=
-          DeviceTransport.vitaTransfer
-    ) {
+    if (device.transport != DeviceTransport.vitaTransfer) {
       return state;
     }
 
-    final devices =
-        Map<String, Device>.from(
+    final devices = Map<String, Device>.from(
       state.devices,
     );
 

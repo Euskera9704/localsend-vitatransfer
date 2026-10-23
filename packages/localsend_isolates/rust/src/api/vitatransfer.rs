@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{
+    Arc,
+    Mutex as StdMutex,
     OnceLock,
     atomic::{
         AtomicU64,
@@ -206,6 +208,38 @@ pub struct RsVitaTransferIncomingOffer {
         Vec<RsVitaTransferIncomingFile>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RsVitaTransferReceiveProgress {
+    pub session_id: String,
+
+    pub file_name: String,
+
+    pub file_number: u16,
+
+    pub file_count: u16,
+
+    pub file_bytes_received: u64,
+
+    pub file_size: u64,
+
+    /*
+     * Bytes recibidos en todo el lote hasta este momento.
+     *
+     * Dart conoce el tamaño total del lote mediante
+     * el manifest, así que podrá calcular el porcentaje
+     * global.
+     */
+    pub batch_bytes_received: u64,
+
+    pub megabytes_per_second: f64,
+
+    /*
+     * true únicamente cuando este archivo ya ha
+     * terminado y ha superado SHA-256.
+     */
+    pub file_finished: bool,
+}
+
 
 /*
  * Estado privado.
@@ -245,6 +279,46 @@ static INCOMING_SESSIONS:
         >
     > =
         OnceLock::new();
+
+
+/*
+ * =========================================================
+ * CANCELACIÓN DE TRANSFERENCIAS ENTRANTES ACTIVAS
+ * =========================================================
+ *
+ * Una vez que Aceptar consume INCOMING_SESSIONS,
+ * necesitamos conservar una forma de cancelar la
+ * transferencia que ya está ejecutándose.
+ */
+
+static ACTIVE_INCOMING_CANCELS:
+    OnceLock<
+        Mutex<
+            HashMap<
+                String,
+                CancellationToken
+            >
+        >
+    > =
+        OnceLock::new();
+
+
+fn active_incoming_cancels(
+) -> &'static Mutex<
+    HashMap<
+        String,
+        CancellationToken
+    >
+> {
+    ACTIVE_INCOMING_CANCELS
+        .get_or_init(
+            || {
+                Mutex::new(
+                    HashMap::new()
+                )
+            }
+        )
+}
 
 
 fn incoming_sessions(
@@ -1274,6 +1348,706 @@ impl RsVitaTransferDiscovery {
                 => {
                     break;
                 }
+            }
+        }
+    }
+
+    /*
+     * =========================================================
+     * RECHAZAR OFERTA ENTRANTE VITA -> PC
+     * =========================================================
+     *
+     * Recupera exactamente la sesión retenida después
+     * de recibir el manifest.
+     *
+     * La sesión se elimina del registro ANTES de cerrar
+     * el protocolo, de modo que no pueda reutilizarse.
+     */
+
+    pub async fn reject_incoming(
+        &self,
+        session_id: String,
+    ) -> anyhow::Result<()> {
+        let mut incoming_session =
+            {
+                let mut sessions =
+                    incoming_sessions()
+                        .lock()
+                        .await;
+
+                sessions
+                    .remove(
+                        &session_id
+                    )
+                    .ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "Unknown VitaTransfer incoming session: {}",
+                                session_id
+                            )
+                        }
+                    )?
+            };
+
+
+        println!(
+            "[VitaTransfer] Rejecting incoming Vita session: {}",
+            session_id
+        );
+
+
+        /*
+         * Por ahora el rechazo utiliza el cierre limpio
+         * del protocolo ya existente:
+         *
+         * PC   -> COMMAND_SESSION_END
+         * Vita -> SESSION_END_ACK
+         */
+        transfer::close_session(
+            &mut incoming_session.stream
+        )
+        .await?;
+
+
+        println!(
+            "[VitaTransfer] Incoming Vita session rejected and released: {}",
+            session_id
+        );
+
+
+        Ok(())
+    }
+
+
+    /*
+     * =========================================================
+     * ACEPTAR OFERTA ENTRANTE VITA -> PC
+     * =========================================================
+     *
+     * Recupera exactamente la sesión retenida después
+     * del manifest:
+     *
+     * - mismo TcpStream;
+     * - mismo handshake;
+     * - misma session_key;
+     * - misma responder_to_initiator_key.
+     *
+     * No se realiza un nuevo handshake.
+     */
+
+    /*
+    * =========================================================
+    * CANCELAR TRANSFERENCIA ENTRANTE YA ACEPTADA
+    * =========================================================
+    */
+
+    pub async fn cancel_incoming_transfer(
+        &self,
+        session_id: String,
+    ) -> anyhow::Result<()> {
+        let cancel =
+            {
+                let active =
+                    active_incoming_cancels()
+                        .lock()
+                        .await;
+
+                active
+                    .get(
+                        &session_id
+                    )
+                    .cloned()
+                    .ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "No active VitaTransfer incoming transfer: {}",
+                                session_id
+                            )
+                        }
+                    )?
+            };
+
+
+        println!(
+            "[VitaTransfer] Cancelling incoming Vita transfer: {}",
+            session_id
+        );
+
+
+        cancel.cancel();
+
+
+        Ok(())
+    }
+
+    pub async fn accept_incoming(
+        &self,
+        session_id: String,
+    ) -> anyhow::Result<()> {
+        let incoming_session =
+            {
+                let mut sessions =
+                    incoming_sessions()
+                        .lock()
+                        .await;
+
+                sessions
+                    .remove(
+                        &session_id
+                    )
+                    .ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "Unknown VitaTransfer incoming session: {}",
+                                session_id
+                            )
+                        }
+                    )?
+            };
+
+
+        /*
+         * Separamos las dos partes de la sesión para poder
+         * usar el stream mutable y las claves del handshake.
+         */
+        let VitaTransferIncomingSessionState {
+            mut stream,
+            handshake_result,
+        } = incoming_session;
+
+
+        println!(
+            "[VitaTransfer] Accepting incoming Vita session: {}",
+            session_id
+        );
+
+
+        let output_directory =
+            vitatransfer_receive_directory();
+
+
+        println!(
+            "[VitaTransfer] Starting incoming Vita batch"
+        );
+
+        println!(
+            "[VitaTransfer] Receive directory: {}",
+            output_directory.display()
+        );
+
+
+        /*
+         * receive_batch() ya implementa el receptor que
+         * utilizamos en las pruebas Vita -> PC anteriores.
+         *
+         * El comando 0x03 hará que la Vita empiece a enviar
+         * el lote que ya seleccionó antes del manifest.
+         */
+        let receive_result =
+            receive::receive_batch(
+                &mut stream,
+
+                &handshake_result
+                    .keys
+                    .session_key,
+
+                &handshake_result
+                    .keys
+                    .responder_to_initiator_key,
+
+                &output_directory,
+            )
+            .await;
+
+
+        match receive_result {
+            Ok(stats) => {
+                if stats.cancelled {
+                    println!(
+                        "[VitaTransfer] Incoming Vita batch cancelled"
+                    );
+                }
+                else {
+                    println!(
+                        "[VitaTransfer] Incoming Vita batch complete: {} file(s), {:.2} MB, {:.2} MB/s",
+                        stats.files_received,
+                        stats.bytes_received as f64
+                            / (1024.0 * 1024.0),
+                        stats.megabytes_per_second,
+                    );
+                }
+
+
+                /*
+                 * Una vez terminado el lote cerramos la misma
+                 * sesión de forma limpia.
+                 */
+                transfer::close_session(
+                    &mut stream
+                )
+                .await?;
+
+
+                println!(
+                    "[VitaTransfer] Incoming Vita session completed and released: {}",
+                    session_id
+                );
+
+
+                Ok(())
+            }
+
+
+            Err(error) => {
+                eprintln!(
+                    "[VitaTransfer] Incoming Vita transfer failed for {}: {}",
+                    session_id,
+                    error
+                );
+
+
+                /*
+                 * Intentamos cerrar limpiamente incluso
+                 * después de un error. Si este cierre también
+                 * falla, conservamos como error principal el
+                 * de la transferencia.
+                 */
+                let _ =
+                    transfer::close_session(
+                        &mut stream
+                    )
+                    .await;
+
+
+                Err(error)
+            }
+        }
+    }
+
+    /*
+     * =========================================================
+     * ACEPTAR OFERTA VITA -> PC CON STREAM DE PROGRESO
+     * =========================================================
+     *
+     * Es el equivalente a accept_incoming(), pero utiliza
+     * receive_batch_with_progress() y publica cada actualización
+     * hacia Dart mediante StreamSink.
+     */
+
+    pub async fn accept_incoming_with_progress(
+        &self,
+        session_id: String,
+        sink: StreamSink<RsVitaTransferReceiveProgress>,
+    ) -> anyhow::Result<()> {
+        let incoming_session =
+            {
+                let mut sessions =
+                    incoming_sessions()
+                        .lock()
+                        .await;
+
+                sessions
+                    .remove(
+                        &session_id
+                    )
+                    .ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "Unknown VitaTransfer incoming session: {}",
+                                session_id
+                            )
+                        }
+                    )?
+            };
+
+
+        let VitaTransferIncomingSessionState {
+            mut stream,
+            handshake_result,
+        } = incoming_session;
+
+        let transfer_cancel =
+            CancellationToken::new();
+
+
+        active_incoming_cancels()
+            .lock()
+            .await
+            .insert(
+                session_id.clone(),
+                transfer_cancel.clone(),
+            );
+
+
+        println!(
+            "[VitaTransfer] Accepting incoming Vita session with progress: {}",
+            session_id
+        );
+
+
+        let output_directory =
+            vitatransfer_receive_directory();
+
+
+        println!(
+            "[VitaTransfer] Starting incoming Vita batch with progress"
+        );
+
+        println!(
+            "[VitaTransfer] Receive directory: {}",
+            output_directory.display()
+        );
+
+
+        /*
+         * Cantidad de bytes pertenecientes a archivos
+         * ya terminados.
+         *
+         * Permite transformar el progreso individual
+         * de receive.rs en progreso global del lote.
+         */
+        let mut completed_batch_bytes:
+            u64 =
+            0;
+
+
+        let mut current_file_number:
+            u16 =
+            0;
+
+
+        let mut current_file_base:
+            u64 =
+            0;
+
+        /*
+        * Nombre del archivo que está actualmente incompleto.
+        *
+        * None:
+        * - todavía no empezó ningún archivo, o
+        * - el último archivo terminó y pasó SHA-256.
+        *
+        * Some(nombre):
+        * - ese archivo está actualmente en recepción.
+        */
+        let current_partial_filename =
+            Arc::new(
+                StdMutex::new(
+                    None::<String>
+                )
+            );
+
+
+        let progress_partial_filename =
+            Arc::clone(
+                &current_partial_filename
+            );
+
+        let progress_session_id =
+            session_id.clone();
+
+
+        let mut on_progress =
+            move |
+                progress:
+                    receive::BatchReceiveProgress
+            | {
+
+                /*
+                * Seguimos qué archivo está incompleto.
+                *
+                * file_finished solo llega a true después
+                * de terminar y superar SHA-256.
+                */
+                if let Ok(
+                    mut partial
+                ) =
+                    progress_partial_filename
+                        .lock()
+                {
+                    if progress.file_finished {
+                        *partial =
+                            None;
+                    } else {
+                        *partial =
+                            Some(
+                                progress.filename.clone()
+                            );
+                    }
+                }
+
+                /*
+                 * Al entrar en un nuevo archivo,
+                 * fijamos como base todos los bytes
+                 * completados anteriormente.
+                 */
+                if progress.file_number !=
+                    current_file_number
+                {
+                    current_file_number =
+                        progress.file_number;
+
+                    current_file_base =
+                        completed_batch_bytes;
+                }
+
+
+                let batch_bytes_received =
+                    current_file_base
+                        .saturating_add(
+                            progress
+                                .file_bytes_received
+                        );
+
+
+                let _ =
+                    sink.add(
+                        RsVitaTransferReceiveProgress {
+                            session_id:
+                                progress_session_id
+                                    .clone(),
+
+                            file_name:
+                                progress.filename
+                                    .clone(),
+
+                            file_number:
+                                progress.file_number,
+
+                            file_count:
+                                progress.file_count,
+
+                            file_bytes_received:
+                                progress
+                                    .file_bytes_received,
+
+                            file_size:
+                                progress.file_size,
+
+                            batch_bytes_received,
+
+                            megabytes_per_second:
+                                progress
+                                    .megabytes_per_second,
+
+                            file_finished:
+                                progress.file_finished,
+                        }
+                    );
+
+
+                /*
+                 * Solo consolidamos estos bytes como
+                 * terminados cuando SHA-256 ya ha sido
+                 * validado.
+                 */
+                if progress.file_finished {
+                    completed_batch_bytes =
+                        batch_bytes_received;
+                }
+            };
+
+
+        enum IncomingReceiveOutcome {
+            Finished(
+                anyhow::Result<
+                    receive::BatchReceiveStats
+                >
+            ),
+
+            Cancelled,
+        }
+
+
+        let outcome =
+            tokio::select! {
+                result =
+                    receive::receive_batch_with_progress(
+                        &mut stream,
+
+                        &handshake_result
+                            .keys
+                            .session_key,
+
+                        &handshake_result
+                            .keys
+                            .responder_to_initiator_key,
+
+                        &output_directory,
+
+                        &mut on_progress,
+                    )
+                => {
+                    IncomingReceiveOutcome::Finished(
+                        result
+                    )
+                }
+
+
+                _ =
+                    transfer_cancel.cancelled()
+                => {
+                    IncomingReceiveOutcome::Cancelled
+                }
+            };
+
+
+        active_incoming_cancels()
+            .lock()
+            .await
+            .remove(
+                &session_id
+            );
+
+
+        let receive_result =
+            match outcome {
+                IncomingReceiveOutcome::Finished(
+                    result
+                ) => {
+                    result
+                }
+
+
+                IncomingReceiveOutcome::Cancelled => {
+                    println!(
+                        "[VitaTransfer] Incoming Vita transfer cancelled: {}",
+                        session_id
+                    );
+
+
+                    /*
+                    * =====================================================
+                    * ELIMINAR SOLO EL ARCHIVO PARCIAL
+                    * =====================================================
+                    *
+                    * Los archivos anteriores que ya pasaron SHA-256
+                    * pusieron este estado a None y se conservan.
+                    */
+                    let partial_filename =
+                        current_partial_filename
+                            .lock()
+                            .ok()
+                            .and_then(
+                                |mut partial| {
+                                    partial.take()
+                                }
+                            );
+
+
+                    if let Some(
+                        partial_filename
+                    ) =
+                        partial_filename
+                    {
+                        let partial_path =
+                            output_directory
+                                .join(
+                                    &partial_filename
+                                );
+
+
+                        match tokio::fs::remove_file(
+                            &partial_path
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                println!(
+                                    "[VitaTransfer] Removed partial incoming file: {}",
+                                    partial_path.display()
+                                );
+                            }
+
+
+                            Err(error)
+                                if error.kind()
+                                    ==
+                                    std::io::ErrorKind::NotFound =>
+                            {
+                                /*
+                                * Si todavía no se había creado físicamente,
+                                * no hay nada que eliminar.
+                                */
+                            }
+
+
+                            Err(error) => {
+                                eprintln!(
+                                    "[VitaTransfer] WARNING: Could not remove partial file {}: {}",
+                                    partial_path.display(),
+                                    error
+                                );
+                            }
+                        }
+                    }
+
+
+                    /*
+                    * Cerramos TCP para que la Vita deje también
+                    * inmediatamente su lado de la transferencia.
+                    */
+                    let _ =
+                        stream
+                            .shutdown()
+                            .await;
+
+
+                    return Ok(());
+                }
+            };
+
+
+        match receive_result {
+            Ok(stats) => {
+                if stats.cancelled {
+                    println!(
+                        "[VitaTransfer] Incoming Vita batch cancelled"
+                    );
+                }
+                else {
+                    println!(
+                        "[VitaTransfer] Incoming Vita batch complete: {} file(s), {:.2} MB, {:.2} MB/s",
+                        stats.files_received,
+                        stats.bytes_received as f64
+                            / (1024.0 * 1024.0),
+                        stats.megabytes_per_second,
+                    );
+                }
+
+
+                transfer::close_session(
+                    &mut stream
+                )
+                .await?;
+
+
+                println!(
+                    "[VitaTransfer] Incoming Vita session completed and released: {}",
+                    session_id
+                );
+
+
+                Ok(())
+            }
+
+
+            Err(error) => {
+                eprintln!(
+                    "[VitaTransfer] Incoming Vita transfer failed for {}: {}",
+                    session_id,
+                    error
+                );
+
+
+                let _ =
+                    transfer::close_session(
+                        &mut stream
+                    )
+                    .await;
+
+
+                Err(error)
             }
         }
     }

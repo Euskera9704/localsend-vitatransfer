@@ -78,6 +78,29 @@ pub struct BatchReceiveStats {
 }
 
 #[derive(Debug, Clone)]
+pub struct BatchReceiveProgress {
+    pub filename: String,
+
+    /*
+     * Índice basado en 1:
+     * 1 de 2, 2 de 2...
+     */
+    pub file_number: u16,
+    pub file_count: u16,
+
+    pub file_bytes_received: u64,
+    pub file_size: u64,
+
+    pub megabytes_per_second: f64,
+
+    /*
+     * true cuando ESTE archivo ha terminado
+     * correctamente y ha pasado SHA-256.
+     */
+    pub file_finished: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct BatchManifestFile {
     pub filename: String,
     pub size: u64,
@@ -398,14 +421,18 @@ pub async fn receive_batch_manifest(
     )
 }
 
-async fn receive_offered_file(
+async fn receive_offered_file<F>(
     stream: &mut TcpStream,
     session_key: &[u8; 32],
     receive_key: &[u8; 32],
     output_directory: &Path,
     file_number: u16,
     file_count: u16,
-) -> Result<ReceivedFileStats> {
+    on_progress: &mut F,
+) -> Result<ReceivedFileStats>
+where
+    F: FnMut(BatchReceiveProgress),
+{
     /*
      * =====================================================
      * METADATA
@@ -562,6 +589,35 @@ async fn receive_offered_file(
     println!(
         "Destino: {}",
         output_path.display()
+    );
+
+    /*
+    * Evento inicial del archivo.
+    *
+    * Además de permitir que Flutter conozca el archivo
+    * desde 0 bytes, nos será útil para eliminar el parcial
+    * correctamente al cancelar.
+    */
+    on_progress(
+        BatchReceiveProgress {
+            filename:
+                filename.clone(),
+
+            file_number,
+            file_count,
+
+            file_bytes_received:
+                0,
+
+            file_size:
+                filesize,
+
+            megabytes_per_second:
+                0.0,
+
+            file_finished:
+                false,
+        }
     );
 
     /*
@@ -831,6 +887,28 @@ async fn receive_offered_file(
                 println!(
                     "{received_mb:.2} / {total_mb:.2} MB   {percent:6.2}%   {speed:.2} MB/s"
                 );
+
+                on_progress(
+                    BatchReceiveProgress {
+                        filename:
+                            filename.clone(),
+
+                        file_number,
+                        file_count,
+
+                        file_bytes_received:
+                            total_received,
+
+                        file_size:
+                            filesize,
+
+                        megabytes_per_second:
+                            speed,
+
+                        file_finished:
+                            false,
+                    }
+                );
             }
 
             output
@@ -965,6 +1043,27 @@ async fn receive_offered_file(
             0.0
         };
 
+    on_progress(
+        BatchReceiveProgress {
+            filename:
+                filename.clone(),
+
+            file_number,
+            file_count,
+
+            file_bytes_received:
+                total_received,
+
+            file_size:
+                filesize,
+
+            megabytes_per_second,
+
+            file_finished:
+                true,
+        }
+    );
+
     println!();
     println!(
         "========================================"
@@ -1002,12 +1101,16 @@ async fn receive_offered_file(
     )
 }
 
-pub async fn receive_batch(
+pub async fn receive_batch_with_progress<F>(
     stream: &mut TcpStream,
     session_key: &[u8; 32],
     receive_key: &[u8; 32],
     output_directory: &Path,
-) -> Result<BatchReceiveStats> {
+    on_progress: &mut F,
+) -> Result<BatchReceiveStats>
+where
+    F: FnMut(BatchReceiveProgress),
+{
     /*
      * =====================================================
      * PEDIR ARCHIVOS A LA VITA
@@ -1173,6 +1276,7 @@ pub async fn receive_batch(
                 output_directory,
                 file_number,
                 file_count,
+                on_progress,
             )
             .await?;
 
@@ -1269,4 +1373,36 @@ pub async fn receive_batch(
                 false,
         }
     )
+}
+
+/*
+ * =========================================================
+ * API COMPATIBLE SIN PROGRESO
+ * =========================================================
+ *
+ * Conservamos receive_batch() para que todo el código
+ * existente siga funcionando exactamente igual.
+ *
+ * Más adelante accept_incoming_with_progress() utilizará
+ * receive_batch_with_progress().
+ */
+pub async fn receive_batch(
+    stream: &mut TcpStream,
+    session_key: &[u8; 32],
+    receive_key: &[u8; 32],
+    output_directory: &Path,
+) -> Result<BatchReceiveStats> {
+    let mut ignore_progress =
+        |_progress: BatchReceiveProgress| {
+        };
+
+
+    receive_batch_with_progress(
+        stream,
+        session_key,
+        receive_key,
+        output_directory,
+        &mut ignore_progress,
+    )
+    .await
 }

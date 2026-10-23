@@ -45,7 +45,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1423398338;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -474652964;
 
 // Section: executor
 
@@ -1837,6 +1837,118 @@ fn wire__crate__api__server__RsHttpServer_stop_impl(
         },
     )
 }
+fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_accept_incoming_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "RsVitaTransferDiscovery_accept_incoming",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>,
+            >>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok =
+                            crate::api::vitatransfer::RsVitaTransferDiscovery::accept_incoming(
+                                &*api_that_guard,
+                                api_session_id,
+                            )
+                            .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_accept_incoming_with_progress_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "RsVitaTransferDiscovery_accept_incoming_with_progress", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>>::sse_decode(&mut deserializer);
+let api_session_id = <String>::sse_decode(&mut deserializer);
+let api_sink = <StreamSink<crate::api::vitatransfer::RsVitaTransferReceiveProgress,flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>((move || async move {
+                        let mut api_that_guard = None;
+let decode_indices_ = flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(&api_that, 0, false)]);
+        for i in decode_indices_ {
+            match i {
+                0 => api_that_guard = Some(api_that.lockable_decode_async_ref().await),
+                _ => unreachable!(),
+            }
+        }
+        let api_that_guard = api_that_guard.unwrap();
+ let output_ok = crate::api::vitatransfer::RsVitaTransferDiscovery::accept_incoming_with_progress(&*api_that_guard, api_session_id, api_sink).await?;   Ok(output_ok)
+                    })().await)
+                } })
+}
+fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_cancel_incoming_transfer_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "RsVitaTransferDiscovery_cancel_incoming_transfer", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>>::sse_decode(&mut deserializer);
+let api_session_id = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>((move || async move {
+                        let mut api_that_guard = None;
+let decode_indices_ = flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(&api_that, 0, false)]);
+        for i in decode_indices_ {
+            match i {
+                0 => api_that_guard = Some(api_that.lockable_decode_async_ref().await),
+                _ => unreachable!(),
+            }
+        }
+        let api_that_guard = api_that_guard.unwrap();
+ let output_ok = crate::api::vitatransfer::RsVitaTransferDiscovery::cancel_incoming_transfer(&*api_that_guard, api_session_id).await?;   Ok(output_ok)
+                    })().await)
+                } })
+}
 fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1959,6 +2071,67 @@ fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_incoming_impl(
                             )
                             .await;
                         })?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__vitatransfer__RsVitaTransferDiscovery_reject_incoming_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "RsVitaTransferDiscovery_reject_incoming",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>,
+            >>::sse_decode(&mut deserializer);
+            let api_session_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok =
+                            crate::api::vitatransfer::RsVitaTransferDiscovery::reject_incoming(
+                                &*api_that_guard,
+                                api_session_id,
+                            )
+                            .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -4585,6 +4758,19 @@ impl SseDecode
 }
 
 impl SseDecode
+    for StreamSink<
+        crate::api::vitatransfer::RsVitaTransferReceiveProgress,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
     for StreamSink<crate::api::webrtc::RTCFileError, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -5573,6 +5759,32 @@ impl SseDecode for crate::api::vitatransfer::RsVitaTransferProgress {
     }
 }
 
+impl SseDecode for crate::api::vitatransfer::RsVitaTransferReceiveProgress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_fileName = <String>::sse_decode(deserializer);
+        let mut var_fileNumber = <u16>::sse_decode(deserializer);
+        let mut var_fileCount = <u16>::sse_decode(deserializer);
+        let mut var_fileBytesReceived = <u64>::sse_decode(deserializer);
+        let mut var_fileSize = <u64>::sse_decode(deserializer);
+        let mut var_batchBytesReceived = <u64>::sse_decode(deserializer);
+        let mut var_megabytesPerSecond = <f64>::sse_decode(deserializer);
+        let mut var_fileFinished = <bool>::sse_decode(deserializer);
+        return crate::api::vitatransfer::RsVitaTransferReceiveProgress {
+            session_id: var_sessionId,
+            file_name: var_fileName,
+            file_number: var_fileNumber,
+            file_count: var_fileCount,
+            file_bytes_received: var_fileBytesReceived,
+            file_size: var_fileSize,
+            batch_bytes_received: var_batchBytesReceived,
+            megabytes_per_second: var_megabytesPerSecond,
+            file_finished: var_fileFinished,
+        };
+    }
+}
+
 impl SseDecode for crate::api::vitatransfer::RsVitaTransferSendResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5903,307 +6115,75 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__stream__Dart2RustStreamSink_add_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        3 => wire__crate__api__webrtc__LsSignalingConnection_accept_offer_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        4 => wire__crate__api__webrtc__LsSignalingConnection_send_offer_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        5 => wire__crate__api__webrtc__LsSignalingConnection_update_info_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        7 => wire__crate__api__discovery__RsDiscovery_add_device_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        8 => wire__crate__api__discovery__RsDiscovery_announce_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        9 => wire__crate__api__discovery__RsDiscovery_device_logs_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        10 => wire__crate__api__discovery__RsDiscovery_discover_staged_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        11 => {
-            wire__crate__api__discovery__RsDiscovery_listen_impl(port, ptr, rust_vec_len, data_len)
-        }
-        12 => wire__crate__api__discovery__RsDiscovery_multicast_error_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        13 => wire__crate__api__discovery__RsDiscovery_scan_subnet_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        14 => wire__crate__api__discovery__RsDiscovery_set_answer_announcements_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        15 => wire__crate__api__discovery__RsDiscovery_stop_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__http__RsHttpClient_cancel_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__http__RsHttpClient_prepare_upload_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        18 => wire__crate__api__http__RsHttpClient_register_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__http__RsHttpClient_upload_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__server__RsHttpServer_cancel_session_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        21 => wire__crate__api__server__RsHttpServer_fail_file_download_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        22 => wire__crate__api__server__RsHttpServer_fail_file_upload_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        23 => wire__crate__api__server__RsHttpServer_listen_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__server__RsHttpServer_respond_file_download_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        25 => wire__crate__api__server__RsHttpServer_respond_file_upload_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        26 => wire__crate__api__server__RsHttpServer_respond_prepare_download_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        27 => wire__crate__api__server__RsHttpServer_respond_prepare_upload_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        28 => wire__crate__api__server__RsHttpServer_stop_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        30 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_incoming_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        31 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_stop_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        32 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_cancel_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        33 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_confirm_pairing_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        34 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_pairing_code_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        35 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_send_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        36 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_send_with_progress_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        37 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        38 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        39 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        41 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        42 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        43 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        44 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        45 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        46 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        47 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        48 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        49 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        50 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        51 => wire__crate__api__webrtc__RtcSendController_send_file_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        52 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        53 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
-        57 => {
-            wire__crate__api__logging__enable_debug_logging_impl(port, ptr, rust_vec_len, data_len)
-        }
-        58 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__crypto__generate_security_context_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        60 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
-        62 => {
-            wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len)
-        }
-        64 => wire__crate__api__vitatransfer__send_vitatransfer_files_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        65 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__vitatransfer__start_vitatransfer_discovery_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        68 => wire__crate__api__vitatransfer__start_vitatransfer_send_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        69 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
-        _ => unreachable!(),
-    }
+                        1 => wire__crate__api__stream__Dart2RustStreamSink_add_impl(port, ptr, rust_vec_len, data_len),
+3 => wire__crate__api__webrtc__LsSignalingConnection_accept_offer_impl(port, ptr, rust_vec_len, data_len),
+4 => wire__crate__api__webrtc__LsSignalingConnection_send_offer_impl(port, ptr, rust_vec_len, data_len),
+5 => wire__crate__api__webrtc__LsSignalingConnection_update_info_impl(port, ptr, rust_vec_len, data_len),
+7 => wire__crate__api__discovery__RsDiscovery_add_device_impl(port, ptr, rust_vec_len, data_len),
+8 => wire__crate__api__discovery__RsDiscovery_announce_impl(port, ptr, rust_vec_len, data_len),
+9 => wire__crate__api__discovery__RsDiscovery_device_logs_impl(port, ptr, rust_vec_len, data_len),
+10 => wire__crate__api__discovery__RsDiscovery_discover_staged_impl(port, ptr, rust_vec_len, data_len),
+11 => wire__crate__api__discovery__RsDiscovery_listen_impl(port, ptr, rust_vec_len, data_len),
+12 => wire__crate__api__discovery__RsDiscovery_multicast_error_impl(port, ptr, rust_vec_len, data_len),
+13 => wire__crate__api__discovery__RsDiscovery_scan_subnet_impl(port, ptr, rust_vec_len, data_len),
+14 => wire__crate__api__discovery__RsDiscovery_set_answer_announcements_impl(port, ptr, rust_vec_len, data_len),
+15 => wire__crate__api__discovery__RsDiscovery_stop_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__http__RsHttpClient_cancel_impl(port, ptr, rust_vec_len, data_len),
+17 => wire__crate__api__http__RsHttpClient_prepare_upload_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__http__RsHttpClient_register_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__http__RsHttpClient_upload_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__server__RsHttpServer_cancel_session_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__server__RsHttpServer_fail_file_download_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__server__RsHttpServer_fail_file_upload_impl(port, ptr, rust_vec_len, data_len),
+23 => wire__crate__api__server__RsHttpServer_listen_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__server__RsHttpServer_respond_file_download_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__server__RsHttpServer_respond_file_upload_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__server__RsHttpServer_respond_prepare_download_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__server__RsHttpServer_respond_prepare_upload_impl(port, ptr, rust_vec_len, data_len),
+28 => wire__crate__api__server__RsHttpServer_stop_impl(port, ptr, rust_vec_len, data_len),
+29 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_accept_incoming_impl(port, ptr, rust_vec_len, data_len),
+30 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_accept_incoming_with_progress_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_cancel_incoming_transfer_impl(port, ptr, rust_vec_len, data_len),
+32 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_listen_incoming_impl(port, ptr, rust_vec_len, data_len),
+34 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_reject_incoming_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__vitatransfer__RsVitaTransferDiscovery_stop_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_cancel_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_confirm_pairing_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_pairing_code_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_send_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__vitatransfer__RsVitaTransferSendSession_send_with_progress_impl(port, ptr, rust_vec_len, data_len),
+41 => wire__crate__api__webrtc__RtcFileReceiver_get_file_id_impl(port, ptr, rust_vec_len, data_len),
+42 => wire__crate__api__webrtc__RtcFileReceiver_receive_impl(port, ptr, rust_vec_len, data_len),
+43 => wire__crate__api__webrtc__RtcFileSender_send_impl(port, ptr, rust_vec_len, data_len),
+44 => wire__crate__api__webrtc__RtcReceiveController_decline_impl(port, ptr, rust_vec_len, data_len),
+45 => wire__crate__api__webrtc__RtcReceiveController_listen_error_impl(port, ptr, rust_vec_len, data_len),
+46 => wire__crate__api__webrtc__RtcReceiveController_listen_files_impl(port, ptr, rust_vec_len, data_len),
+47 => wire__crate__api__webrtc__RtcReceiveController_listen_receiving_impl(port, ptr, rust_vec_len, data_len),
+48 => wire__crate__api__webrtc__RtcReceiveController_listen_status_impl(port, ptr, rust_vec_len, data_len),
+49 => wire__crate__api__webrtc__RtcReceiveController_send_file_status_impl(port, ptr, rust_vec_len, data_len),
+50 => wire__crate__api__webrtc__RtcReceiveController_send_pin_impl(port, ptr, rust_vec_len, data_len),
+51 => wire__crate__api__webrtc__RtcReceiveController_send_selection_impl(port, ptr, rust_vec_len, data_len),
+52 => wire__crate__api__webrtc__RtcSendController_listen_error_impl(port, ptr, rust_vec_len, data_len),
+53 => wire__crate__api__webrtc__RtcSendController_listen_selected_files_impl(port, ptr, rust_vec_len, data_len),
+54 => wire__crate__api__webrtc__RtcSendController_listen_status_impl(port, ptr, rust_vec_len, data_len),
+55 => wire__crate__api__webrtc__RtcSendController_send_file_impl(port, ptr, rust_vec_len, data_len),
+56 => wire__crate__api__webrtc__RtcSendController_send_pin_impl(port, ptr, rust_vec_len, data_len),
+57 => wire__crate__api__webrtc__connect_impl(port, ptr, rust_vec_len, data_len),
+60 => wire__crate__api__stream__create_stream_impl(port, ptr, rust_vec_len, data_len),
+61 => wire__crate__api__logging__enable_debug_logging_impl(port, ptr, rust_vec_len, data_len),
+62 => wire__crate__api__crypto__generate_key_pair_impl(port, ptr, rust_vec_len, data_len),
+63 => wire__crate__api__crypto__generate_security_context_impl(port, ptr, rust_vec_len, data_len),
+64 => wire__crate__api__crypto__hash_file_impl(port, ptr, rust_vec_len, data_len),
+66 => wire__crate__api__metadata__read_file_metadata_impl(port, ptr, rust_vec_len, data_len),
+68 => wire__crate__api__vitatransfer__send_vitatransfer_files_impl(port, ptr, rust_vec_len, data_len),
+69 => wire__crate__api__discovery__start_discovery_impl(port, ptr, rust_vec_len, data_len),
+70 => wire__crate__api__server__start_server_impl(port, ptr, rust_vec_len, data_len),
+71 => wire__crate__api__vitatransfer__start_vitatransfer_discovery_impl(port, ptr, rust_vec_len, data_len),
+72 => wire__crate__api__vitatransfer__start_vitatransfer_send_impl(port, ptr, rust_vec_len, data_len),
+73 => wire__crate__api__crypto__verify_cert_impl(port, ptr, rust_vec_len, data_len),
+                        _ => unreachable!(),
+                    }
 }
 
 fn pde_ffi_dispatcher_sync_impl(
@@ -6216,10 +6196,10 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         2 => wire__crate__api__stream__Dart2RustStreamSink_close_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__cancel__RsCancellationToken_cancel_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__cancel__create_cancellation_token_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__http__create_client_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__filename__is_valid_file_name_impl(ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__filename__sanitize_file_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7269,6 +7249,34 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::vitatransfer::RsVitaTransferP
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vitatransfer::RsVitaTransferReceiveProgress {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.file_name.into_into_dart().into_dart(),
+            self.file_number.into_into_dart().into_dart(),
+            self.file_count.into_into_dart().into_dart(),
+            self.file_bytes_received.into_into_dart().into_dart(),
+            self.file_size.into_into_dart().into_dart(),
+            self.batch_bytes_received.into_into_dart().into_dart(),
+            self.megabytes_per_second.into_into_dart().into_dart(),
+            self.file_finished.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vitatransfer::RsVitaTransferReceiveProgress
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vitatransfer::RsVitaTransferReceiveProgress>
+    for crate::api::vitatransfer::RsVitaTransferReceiveProgress
+{
+    fn into_into_dart(self) -> crate::api::vitatransfer::RsVitaTransferReceiveProgress {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::vitatransfer::RsVitaTransferSendResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -8011,6 +8019,18 @@ impl SseEncode
 impl SseEncode
     for StreamSink<
         crate::api::vitatransfer::RsVitaTransferProgress,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<
+        crate::api::vitatransfer::RsVitaTransferReceiveProgress,
         flutter_rust_bridge::for_generated::SseCodec,
     >
 {
@@ -8800,6 +8820,21 @@ impl SseEncode for crate::api::vitatransfer::RsVitaTransferProgress {
         <bool>::sse_encode(self.finished, serializer);
         <bool>::sse_encode(self.canceled, serializer);
         <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::vitatransfer::RsVitaTransferReceiveProgress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.file_name, serializer);
+        <u16>::sse_encode(self.file_number, serializer);
+        <u16>::sse_encode(self.file_count, serializer);
+        <u64>::sse_encode(self.file_bytes_received, serializer);
+        <u64>::sse_encode(self.file_size, serializer);
+        <u64>::sse_encode(self.batch_bytes_received, serializer);
+        <f64>::sse_encode(self.megabytes_per_second, serializer);
+        <bool>::sse_encode(self.file_finished, serializer);
     }
 }
 

@@ -6,8 +6,9 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `incoming_sessions`, `run_send_with_progress`, `vita_identity_fingerprint`, `vitatransfer_receive_directory`
+// These functions are ignored because they are not marked as `pub`: `active_incoming_cancels`, `incoming_sessions`, `run_send_with_progress`, `vita_identity_fingerprint`, `vitatransfer_receive_directory`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `VitaTransferHandshakeState`, `VitaTransferIncomingSessionState`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
 Future<RsVitaTransferDiscovery> startVitatransferDiscovery({required String pcName}) =>
     RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery(pcName: pcName);
@@ -20,9 +21,17 @@ Future<RsVitaTransferSendSession> startVitatransferSend({required String host, r
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>
 abstract class RsVitaTransferDiscovery implements RustOpaqueInterface {
+  Future<void> acceptIncoming({required String sessionId});
+
+  Stream<RsVitaTransferReceiveProgress> acceptIncomingWithProgress({required String sessionId});
+
+  Future<void> cancelIncomingTransfer({required String sessionId});
+
   Stream<RsVitaTransferDevice> listen();
 
   Stream<RsVitaTransferIncomingOffer> listenIncoming();
+
+  Future<void> rejectIncoming({required String sessionId});
 
   Future<void> stop();
 }
@@ -184,6 +193,57 @@ class RsVitaTransferProgress {
           finished == other.finished &&
           canceled == other.canceled &&
           error == other.error;
+}
+
+class RsVitaTransferReceiveProgress {
+  final String sessionId;
+  final String fileName;
+  final int fileNumber;
+  final int fileCount;
+  final BigInt fileBytesReceived;
+  final BigInt fileSize;
+  final BigInt batchBytesReceived;
+  final double megabytesPerSecond;
+  final bool fileFinished;
+
+  const RsVitaTransferReceiveProgress({
+    required this.sessionId,
+    required this.fileName,
+    required this.fileNumber,
+    required this.fileCount,
+    required this.fileBytesReceived,
+    required this.fileSize,
+    required this.batchBytesReceived,
+    required this.megabytesPerSecond,
+    required this.fileFinished,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      fileName.hashCode ^
+      fileNumber.hashCode ^
+      fileCount.hashCode ^
+      fileBytesReceived.hashCode ^
+      fileSize.hashCode ^
+      batchBytesReceived.hashCode ^
+      megabytesPerSecond.hashCode ^
+      fileFinished.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsVitaTransferReceiveProgress &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          fileName == other.fileName &&
+          fileNumber == other.fileNumber &&
+          fileCount == other.fileCount &&
+          fileBytesReceived == other.fileBytesReceived &&
+          fileSize == other.fileSize &&
+          batchBytesReceived == other.batchBytesReceived &&
+          megabytesPerSecond == other.megabytesPerSecond &&
+          fileFinished == other.fileFinished;
 }
 
 class RsVitaTransferSendResult {

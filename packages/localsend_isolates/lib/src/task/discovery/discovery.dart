@@ -25,9 +25,15 @@ class DiscoveryService {
 
   final Ref _ref;
   RsDiscovery? _discovery;
+  RsVitaTransferDiscovery? _vitaTransferDiscovery;
+
   Completer<void> _retryCompleter = Completer();
   bool _listening = false;
   bool _vitaTransferListening = false;
+
+  final StreamController<RsVitaTransferIncomingOffer>
+      _vitaTransferIncomingOffers =
+      StreamController<RsVitaTransferIncomingOffer>.broadcast();
 
   /// Whether the current discovery was stopped by [restartListener], as
   /// opposed to stopping itself because the multicast sockets failed.
@@ -52,6 +58,11 @@ class DiscoveryService {
     return devices.stream;
   }
 
+  Stream<RsVitaTransferIncomingOffer>
+      listenVitaTransferIncomingOffers() {
+    return _vitaTransferIncomingOffers.stream;
+  }
+
   Future<void> _runVitaTransferListener(
     StreamController<Device> devices,
   ) async {
@@ -67,6 +78,8 @@ class DiscoveryService {
           startVitatransferDiscovery(
             pcName: _ref.read(syncProvider).alias,
           );
+
+      _vitaTransferDiscovery = discovery;
 
       _logger.info('VitaTransfer discovery started');
 
@@ -88,6 +101,10 @@ class DiscoveryService {
                       '${file.fileName} '
                       '(${file.size} bytes)',
                     );
+                  }
+
+                  if (!_vitaTransferIncomingOffers.isClosed) {
+                    _vitaTransferIncomingOffers.add(offer);
                   }
                 },
                 onError: (Object error) {
@@ -162,8 +179,77 @@ class DiscoveryService {
         e,
       );
     } finally {
+      _vitaTransferDiscovery = null;
       _vitaTransferListening = false;
     }
+  }
+
+  Future<void> rejectVitaTransferIncoming({
+    required String sessionId,
+  }) async {
+    final discovery =
+        _vitaTransferDiscovery;
+
+    if (discovery == null) {
+      throw StateError(
+        'VitaTransfer discovery is not running',
+      );
+    }
+
+    await discovery.rejectIncoming(
+      sessionId: sessionId,
+    );
+  }
+
+  Future<void> acceptVitaTransferIncoming({
+    required String sessionId,
+  }) async {
+    final discovery =
+        _vitaTransferDiscovery;
+
+    if (discovery == null) {
+      throw StateError(
+        'VitaTransfer discovery is not running',
+      );
+    }
+
+    await discovery.acceptIncoming(
+      sessionId: sessionId,
+    );
+  }
+
+  Stream<RsVitaTransferReceiveProgress>
+      acceptVitaTransferIncomingWithProgress({
+    required String sessionId,
+  }) {
+    final discovery = _vitaTransferDiscovery;
+
+    if (discovery == null) {
+      throw StateError(
+        'VitaTransfer discovery is not running',
+      );
+    }
+
+    return discovery.acceptIncomingWithProgress(
+      sessionId: sessionId,
+    );
+  }
+
+  Future<void> cancelVitaTransferIncomingTransfer({
+    required String sessionId,
+  }) async {
+    final discovery =
+        _vitaTransferDiscovery;
+
+    if (discovery == null) {
+      throw StateError(
+        'VitaTransfer discovery is not running',
+      );
+    }
+
+    await discovery.cancelIncomingTransfer(
+      sessionId: sessionId,
+    );
   }
 
   Future<void> _runListener(StreamController<Device> devices) async {

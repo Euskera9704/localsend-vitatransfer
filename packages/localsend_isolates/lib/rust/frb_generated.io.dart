@@ -243,6 +243,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsVitaTransferProgress> dco_decode_StreamSink_rs_vita_transfer_progress_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<RsVitaTransferReceiveProgress> dco_decode_StreamSink_rs_vita_transfer_receive_progress_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<RTCFileError> dco_decode_StreamSink_rtc_file_error_Sse(dynamic raw);
 
   @protected
@@ -507,6 +510,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RsVitaTransferProgress dco_decode_rs_vita_transfer_progress(dynamic raw);
 
   @protected
+  RsVitaTransferReceiveProgress dco_decode_rs_vita_transfer_receive_progress(dynamic raw);
+
+  @protected
   RsVitaTransferSendResult dco_decode_rs_vita_transfer_send_result(dynamic raw);
 
   @protected
@@ -765,6 +771,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RsVitaTransferProgress> sse_decode_StreamSink_rs_vita_transfer_progress_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RsVitaTransferReceiveProgress> sse_decode_StreamSink_rs_vita_transfer_receive_progress_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<RTCFileError> sse_decode_StreamSink_rtc_file_error_Sse(SseDeserializer deserializer);
@@ -1031,6 +1040,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsVitaTransferProgress sse_decode_rs_vita_transfer_progress(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferReceiveProgress sse_decode_rs_vita_transfer_receive_progress(SseDeserializer deserializer);
 
   @protected
   RsVitaTransferSendResult sse_decode_rs_vita_transfer_send_result(SseDeserializer deserializer);
@@ -1343,6 +1355,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_StreamSink_rs_vita_transfer_progress_Sse(RustStreamSink<RsVitaTransferProgress> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_StreamSink_rs_vita_transfer_receive_progress_Sse(RustStreamSink<RsVitaTransferReceiveProgress> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_StreamSink_rtc_file_error_Sse(RustStreamSink<RTCFileError> self, SseSerializer serializer);
 
   @protected
@@ -1609,6 +1624,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_vita_transfer_progress(RsVitaTransferProgress self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_vita_transfer_receive_progress(RsVitaTransferReceiveProgress self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_vita_transfer_send_result(RsVitaTransferSendResult self, SseSerializer serializer);

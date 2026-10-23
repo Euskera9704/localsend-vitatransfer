@@ -1,4 +1,5 @@
 import 'package:localsend_isolates/model/device.dart';
+import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/src/isolate/child/main.dart';
 import 'package:localsend_isolates/src/isolate/dto/send_to_isolate_data.dart';
 import 'package:localsend_isolates/src/task/discovery/discovery.dart';
@@ -19,6 +20,42 @@ class DiscoveryDeviceResult implements DiscoveryResult {
   });
 }
 
+class DiscoveryVitaTransferIncomingOfferResult
+    implements DiscoveryResult {
+  final RsVitaTransferIncomingOffer offer;
+
+  DiscoveryVitaTransferIncomingOfferResult({
+    required this.offer,
+  });
+}
+
+class DiscoveryVitaTransferReceiveProgressResult
+    implements DiscoveryResult {
+  final RsVitaTransferReceiveProgress progress;
+
+  DiscoveryVitaTransferReceiveProgressResult({
+    required this.progress,
+  });
+}
+
+class DiscoveryVitaTransferAcceptIncomingWithProgressTask
+    implements DiscoveryTask {
+  final String sessionId;
+
+  DiscoveryVitaTransferAcceptIncomingWithProgressTask({
+    required this.sessionId,
+  });
+}
+
+class DiscoveryVitaTransferCancelIncomingTransferTask
+    implements DiscoveryTask {
+  final String sessionId;
+
+  DiscoveryVitaTransferCancelIncomingTransferTask({
+    required this.sessionId,
+  });
+}
+
 /// The retained confirmations of one stored device, answering a
 /// [DiscoveryDeviceLogsTask].
 class DiscoveryDeviceLogsResult implements DiscoveryResult {
@@ -32,6 +69,27 @@ class DiscoveryDeviceLogsResult implements DiscoveryResult {
 /// Starts the discovery and streams every confirmed device.
 /// The stream never completes; it survives [DiscoveryRestartTask]s.
 class DiscoveryListenTask implements DiscoveryTask {}
+
+class DiscoveryVitaTransferIncomingListenTask
+    implements DiscoveryTask {}
+
+class DiscoveryVitaTransferRejectIncomingTask
+    implements DiscoveryTask {
+  final String sessionId;
+
+  DiscoveryVitaTransferRejectIncomingTask({
+    required this.sessionId,
+  });
+}
+
+class DiscoveryVitaTransferAcceptIncomingTask
+    implements DiscoveryTask {
+  final String sessionId;
+
+  DiscoveryVitaTransferAcceptIncomingTask({
+    required this.sessionId,
+  });
+}
 
 /// Sends an announcement to all devices on all network interfaces.
 /// They will respond by registering with this device's HTTP server.
@@ -111,15 +169,82 @@ Future<void> setupDiscoveryIsolate(
     handler: (ref, task) async {
       switch (task.data) {
         case DiscoveryListenTask():
-          await for (final device in ref.read(discoveryProvider).startListener()) {
+          await for (
+            final device
+                in ref.read(discoveryProvider).startListener()
+          ) {
             sendToMain(
               IsolateTaskStreamResult.event(
                 id: task.id,
-                data: DiscoveryDeviceResult(device: device),
+                data: DiscoveryDeviceResult(
+                  device: device,
+                ),
               ),
             );
           }
           return;
+
+        case DiscoveryVitaTransferIncomingListenTask():
+          await for (
+            final offer
+                in ref
+                    .read(discoveryProvider)
+                    .listenVitaTransferIncomingOffers()
+          ) {
+            sendToMain(
+              IsolateTaskStreamResult.event(
+                id: task.id,
+                data:
+                    DiscoveryVitaTransferIncomingOfferResult(
+                  offer: offer,
+                ),
+              ),
+            );
+          }
+          return;
+
+        case DiscoveryVitaTransferRejectIncomingTask data:
+          await ref
+              .read(discoveryProvider)
+              .rejectVitaTransferIncoming(
+                sessionId: data.sessionId,
+              );
+          break;
+
+        case DiscoveryVitaTransferAcceptIncomingTask data:
+          await ref
+              .read(discoveryProvider)
+              .acceptVitaTransferIncoming(
+                sessionId: data.sessionId,
+              );
+          break;
+        case DiscoveryVitaTransferAcceptIncomingWithProgressTask data:
+          await for (
+            final progress
+                in ref
+                    .read(discoveryProvider)
+                    .acceptVitaTransferIncomingWithProgress(
+                      sessionId: data.sessionId,
+                    )
+          ) {
+            sendToMain(
+              IsolateTaskStreamResult.event(
+                id: task.id,
+                data:
+                    DiscoveryVitaTransferReceiveProgressResult(
+                  progress: progress,
+                ),
+              ),
+            );
+          }
+          break;
+        case DiscoveryVitaTransferCancelIncomingTransferTask data:
+          await ref
+              .read(discoveryProvider)
+              .cancelVitaTransferIncomingTransfer(
+                sessionId: data.sessionId,
+              );
+          break;
         case DiscoveryAnnouncementTask():
           await ref.read(discoveryProvider).sendAnnouncement();
           break;

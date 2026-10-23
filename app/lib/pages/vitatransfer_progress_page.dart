@@ -7,6 +7,7 @@ import 'package:localsend_app/util/ui/nav_bar_padding.dart';
 import 'package:localsend_app/widget/custom_progress_bar.dart';
 import 'package:localsend_app/widget/dialogs/cancel_session_dialog.dart';
 import 'package:localsend_app/widget/file_thumbnail.dart';
+import 'package:localsend_isolates/model/dto/file_dto.dart';
 import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/util/file_size_helper.dart';
 import 'package:routerino/routerino.dart';
@@ -14,16 +15,63 @@ import 'package:routerino/routerino.dart';
 const _advancedProgressPanelExtraPadding = 100.0;
 
 class VitaTransferProgressPage extends StatefulWidget {
-  final RsVitaTransferSendSession session;
-  final List<CrossFile> files;
+  /*
+   * =========================================================
+   * PC -> VITA
+   * =========================================================
+   */
+  final RsVitaTransferSendSession? session;
+  final List<CrossFile>? files;
+
+  /*
+   * =========================================================
+   * VITA -> PC
+   * =========================================================
+   */
+  final Stream<RsVitaTransferReceiveProgress>?
+      receiveProgress;
+
+  final List<FileDto>? receiveFiles;
+
+  final Future<void> Function()? onCancelReceive;
+
+  final bool receiving;
   final bool showAppBar;
 
+  /*
+   * Constructor original.
+   *
+   * Lo seguimos utilizando sin cambios para PC -> Vita.
+   */
   const VitaTransferProgressPage({
     super.key,
-    required this.session,
-    required this.files,
+    required RsVitaTransferSendSession session,
+    required List<CrossFile> files,
     this.showAppBar = false,
-  });
+  })  : session = session,
+        files = files,
+        receiveProgress = null,
+        receiveFiles = null,
+        onCancelReceive = null,
+        receiving = false;
+
+  /*
+   * Nuevo modo Vita -> PC.
+   */
+  const VitaTransferProgressPage.receiving({
+    super.key,
+    required Stream<RsVitaTransferReceiveProgress>
+        progressStream,
+    required List<FileDto> files,
+    required Future<void> Function()
+        onCancel,
+    this.showAppBar = false,
+  })  : session = null,
+        files = null,
+        receiveProgress = progressStream,
+        receiveFiles = files,
+        onCancelReceive = onCancel,
+        receiving = true;
 
   @override
   State<VitaTransferProgressPage> createState() =>
@@ -32,7 +80,7 @@ class VitaTransferProgressPage extends StatefulWidget {
 
 class _VitaTransferProgressPageState
     extends State<VitaTransferProgressPage> {
-  StreamSubscription<RsVitaTransferProgress>? _subscription;
+  StreamSubscription<dynamic>? _subscription;
 
   late final List<int> _fileBytesSent;
   late final int _totalSize;
@@ -49,28 +97,78 @@ class _VitaTransferProgressPageState
 
   String? _error;
 
+  int get _fileCount {
+    return widget.receiving
+        ? widget.receiveFiles!.length
+        : widget.files!.length;
+  }
+
+
+  int _fileSizeAt(
+    int index,
+  ) {
+    return widget.receiving
+        ? widget.receiveFiles![index].size
+        : widget.files![index].size;
+  }
+
+
+  String _fileNameAt(
+    int index,
+  ) {
+    return widget.receiving
+        ? widget.receiveFiles![index].fileName
+        : widget.files![index].name;
+  }
+
   @override
   void initState() {
     super.initState();
 
     _fileBytesSent =
         List<int>.filled(
-          widget.files.length,
+          _fileCount,
           0,
         );
 
     _totalSize =
-        widget.files.fold<int>(
+        List<int>.generate(
+          _fileCount,
+          _fileSizeAt,
+        ).fold<int>(
           0,
-          (previous, file) =>
-              previous + file.size,
+          (
+            previous,
+            size,
+          ) =>
+              previous + size,
         );
 
     /*
-     * Escuchar este Stream inicia el envío Rust.
-     */
+    * =====================================================
+    * VITA -> PC
+    * =====================================================
+    */
+    if (widget.receiving) {
+      _subscription =
+          widget.receiveProgress!.listen(
+        _onReceiveProgress,
+        onError: _onStreamError,
+        onDone: _onReceiveDone,
+      );
+
+      return;
+    }
+
+    /*
+    * =====================================================
+    * PC -> VITA
+    * =====================================================
+    *
+    * Comportamiento original.
+    */
     _subscription =
-        widget.session
+        widget.session!
             .sendWithProgress()
             .listen(
               _onProgress,
@@ -125,7 +223,7 @@ class _VitaTransferProgressPageState
             progress.fileIndex - 1;
 
         if (index >= 0 &&
-            index < widget.files.length) {
+            index < _fileCount) {
           /*
            * Si hemos empezado un archivo nuevo,
            * los anteriores ya terminaron.
@@ -136,7 +234,7 @@ class _VitaTransferProgressPageState
             previous++
           ) {
             _fileBytesSent[previous] =
-                widget.files[previous].size;
+                _fileSizeAt(previous);
           }
 
           _currentFileIndex = index;
@@ -149,7 +247,7 @@ class _VitaTransferProgressPageState
               _clamp(
                 bytes,
                 0,
-                widget.files[index].size,
+                _fileSizeAt(index),
               );
         }
       }
@@ -174,11 +272,11 @@ class _VitaTransferProgressPageState
       if (progress.finished) {
         for (
           var index = 0;
-          index < widget.files.length;
+          index < _fileCount;
           index++
         ) {
           _fileBytesSent[index] =
-              widget.files[index].size;
+              _fileSizeAt(index);
         }
 
         _totalBytesSent =
@@ -187,6 +285,116 @@ class _VitaTransferProgressPageState
         _finished = true;
         _megabytesPerSecond = 0.0;
       }
+    });
+  }
+
+  void _onReceiveProgress(
+    RsVitaTransferReceiveProgress progress,
+  ) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      /*
+      * fileNumber viene de Rust basado en 1:
+      *
+      * 1/2 -> índice 0
+      * 2/2 -> índice 1
+      */
+      final index =
+          progress.fileNumber - 1;
+
+      if (
+        index >= 0 &&
+        index < _fileCount
+      ) {
+        /*
+        * Si hemos empezado otro archivo,
+        * todos los anteriores ya terminaron.
+        */
+        for (
+          var previous = 0;
+          previous < index;
+          previous++
+        ) {
+          _fileBytesSent[previous] =
+              _fileSizeAt(previous);
+        }
+
+        _currentFileIndex =
+            index;
+
+        _fileBytesSent[index] =
+            _clamp(
+          progress
+              .fileBytesReceived
+              .toInt(),
+          0,
+          _fileSizeAt(index),
+        );
+
+        /*
+        * fileFinished significa que SHA-256
+        * de ese archivo ya fue validado.
+        */
+        if (progress.fileFinished) {
+          _fileBytesSent[index] =
+              _fileSizeAt(index);
+        }
+      }
+
+      _totalBytesSent =
+          _clamp(
+        progress
+            .batchBytesReceived
+            .toInt(),
+        0,
+        _totalSize,
+      );
+
+      _megabytesPerSecond =
+          progress.megabytesPerSecond;
+    });
+  }
+
+  void _onReceiveDone() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+
+      if (_cancelRequested) {
+        _canceled = true;
+        _finished = true;
+        _megabytesPerSecond = 0.0;
+
+        return;
+      }
+
+      /*
+      * Si ya había error, no lo convertimos
+      * artificialmente en transferencia correcta.
+      */
+      if (_error != null) {
+        return;
+      }
+
+      for (
+        var index = 0;
+        index < _fileCount;
+        index++
+      ) {
+        _fileBytesSent[index] =
+            _fileSizeAt(index);
+      }
+
+      _totalBytesSent =
+          _totalSize;
+
+      _finished = true;
+      _megabytesPerSecond = 0.0;
     });
   }
 
@@ -226,7 +434,7 @@ class _VitaTransferProgressPageState
     int index,
   ) {
     final size =
-        widget.files[index].size;
+        _fileSizeAt(index);
 
     if (size <= 0) {
       return 0.0;
@@ -250,11 +458,11 @@ class _VitaTransferProgressPageState
 
     for (
       var index = 0;
-      index < widget.files.length;
+      index < _fileCount;
       index++
     ) {
       if (_fileBytesSent[index] >=
-          widget.files[index].size) {
+              _fileSizeAt(index)) {
         count++;
       }
     }
@@ -352,7 +560,33 @@ class _VitaTransferProgressPageState
     });
 
     try {
-      await widget.session.cancel();
+      /*
+      * ===============================================
+      * VITA -> PC
+      * ===============================================
+      */
+      if (widget.receiving) {
+        await widget.onCancelReceive!();
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _canceled = true;
+          _finished = true;
+          _megabytesPerSecond = 0.0;
+        });
+
+        return;
+      }
+
+      /*
+      * ===============================================
+      * PC -> VITA
+      * ===============================================
+      */
+      await widget.session!.cancel();
     } catch (error) {
       if (!mounted) {
         return;
@@ -363,6 +597,7 @@ class _VitaTransferProgressPageState
             error.toString();
 
         _finished = true;
+        _megabytesPerSecond = 0.0;
       });
     }
   }
@@ -398,7 +633,9 @@ class _VitaTransferProgressPageState
     BuildContext context,
   ) {
     final title =
-        t.progressPage.titleSending;
+        widget.receiving
+            ? t.progressPage.titleReceiving
+            : t.progressPage.titleSending;
 
     return PopScope(
       canPop: _finished,
@@ -454,8 +691,7 @@ class _VitaTransferProgressPageState
                   ),
 
               itemCount:
-                  widget.files.length +
-                  2,
+                  _fileCount + 2,
 
               itemBuilder: (
                 context,
@@ -523,8 +759,21 @@ class _VitaTransferProgressPageState
                 final fileIndex =
                     index - 2;
 
-                final file =
-                    widget.files[fileIndex];
+                final outgoingFile =
+                    widget.receiving
+                        ? null
+                        : widget.files![fileIndex];
+
+                final incomingFile =
+                    widget.receiving
+                        ? widget.receiveFiles![fileIndex]
+                        : null;
+
+                final fileName =
+                    _fileNameAt(fileIndex);
+
+                final fileSize =
+                    _fileSizeAt(fileIndex);
 
                 final progress =
                     _fileProgress(
@@ -533,7 +782,7 @@ class _VitaTransferProgressPageState
 
                 final completed =
                     _fileBytesSent[fileIndex] >=
-                    file.size;
+                    fileSize;
 
                 final currentlySending =
                     !_finished &&
@@ -552,18 +801,20 @@ class _VitaTransferProgressPageState
 
                     children: [
                       SmartFileThumbnail(
-                        bytes:
-                            file.thumbnail,
+                          bytes:
+                              outgoingFile?.thumbnail,
 
-                        asset:
-                            file.asset,
+                          asset:
+                              outgoingFile?.asset,
 
-                        path:
-                            file.path,
+                          path:
+                              outgoingFile?.path,
 
-                        fileType:
-                            file.fileType,
-                      ),
+                          fileType:
+                              widget.receiving
+                                  ? incomingFile!.fileType
+                                  : outgoingFile!.fileType,
+                        ),
 
                       const SizedBox(
                         width: 10,
@@ -579,7 +830,7 @@ class _VitaTransferProgressPageState
                               children: [
                                 Flexible(
                                   child: Text(
-                                    file.name,
+                                    fileName,
 
                                     style:
                                         const TextStyle(
@@ -598,7 +849,7 @@ class _VitaTransferProgressPageState
                                 ),
 
                                 Text(
-                                  ' (${file.size.asReadableFileSize})',
+                                  ' (${fileSize.asReadableFileSize})',
 
                                   style:
                                       const TextStyle(
@@ -784,9 +1035,7 @@ class _VitaTransferProgressPageState
                                                   _finishedFileCount,
 
                                               n:
-                                                  widget
-                                                      .files
-                                                      .length,
+                                                    _fileCount,
                                             ),
                                       ),
 

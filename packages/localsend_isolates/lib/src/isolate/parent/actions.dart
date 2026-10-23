@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/rust/api/server.dart' show WebParams;
+import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/src/isolate/child/discovery_isolate.dart';
 import 'package:localsend_isolates/src/isolate/child/server_isolate.dart';
 import 'package:localsend_isolates/src/isolate/child/upload_isolate.dart';
@@ -31,6 +32,186 @@ class IsolateDiscoveryListenAction extends ReduxActionWithResult<IsolateControll
           )
           .toDeviceStream(),
     );
+  }
+}
+
+class IsolateVitaTransferIncomingListenAction
+    extends ReduxActionWithResult<
+        IsolateController,
+        ParentIsolateState,
+        Stream<RsVitaTransferIncomingOffer>> {
+  @override
+  (
+    ParentIsolateState,
+    Stream<RsVitaTransferIncomingOffer>,
+  ) reduce() {
+    final connection = state.discovery;
+
+    if (connection == null) {
+      throw StateError(
+        'discovery is not initialized',
+      );
+    }
+
+    return (
+      state,
+      connection
+          .sendWrappedTaskAndListenStream(
+            task:
+                DiscoveryVitaTransferIncomingListenTask(),
+          )
+          .map(
+            (result) =>
+                (result
+                        as DiscoveryVitaTransferIncomingOfferResult)
+                    .offer,
+          ),
+    );
+  }
+}
+
+class IsolateVitaTransferRejectIncomingAction
+    extends AsyncReduxAction<
+        IsolateController,
+        ParentIsolateState> {
+  final String sessionId;
+
+  IsolateVitaTransferRejectIncomingAction({
+    required this.sessionId,
+  });
+
+  @override
+  Future<ParentIsolateState> reduce() async {
+    final connection =
+        state.discovery;
+
+    if (connection == null) {
+      throw StateError(
+        'discovery is not initialized',
+      );
+    }
+
+    await connection
+        .sendWrappedTaskAndListenStream(
+          task:
+              DiscoveryVitaTransferRejectIncomingTask(
+            sessionId: sessionId,
+          ),
+        )
+        .drain<void>();
+
+    return state;
+  }
+}
+
+class IsolateVitaTransferAcceptIncomingAction
+    extends AsyncReduxAction<
+        IsolateController,
+        ParentIsolateState> {
+  final String sessionId;
+
+  IsolateVitaTransferAcceptIncomingAction({
+    required this.sessionId,
+  });
+
+  @override
+  Future<ParentIsolateState> reduce() async {
+    final connection =
+        state.discovery;
+
+    if (connection == null) {
+      throw StateError(
+        'discovery is not initialized',
+      );
+    }
+
+    await connection
+        .sendWrappedTaskAndListenStream(
+          task:
+              DiscoveryVitaTransferAcceptIncomingTask(
+            sessionId: sessionId,
+          ),
+        )
+        .drain<void>();
+
+    return state;
+  }
+}
+
+class IsolateVitaTransferAcceptIncomingWithProgressAction
+    extends ReduxActionWithResult<
+        IsolateController,
+        ParentIsolateState,
+        Stream<RsVitaTransferReceiveProgress>> {
+  final String sessionId;
+
+  IsolateVitaTransferAcceptIncomingWithProgressAction({
+    required this.sessionId,
+  });
+
+  @override
+  (
+    ParentIsolateState,
+    Stream<RsVitaTransferReceiveProgress>,
+  ) reduce() {
+    final connection = state.discovery;
+
+    if (connection == null) {
+      throw StateError(
+        'discovery is not initialized',
+      );
+    }
+
+    return (
+      state,
+      connection
+          .sendWrappedTaskAndListenStream(
+            task:
+                DiscoveryVitaTransferAcceptIncomingWithProgressTask(
+              sessionId: sessionId,
+            ),
+          )
+          .map(
+            (result) =>
+                (result
+                        as DiscoveryVitaTransferReceiveProgressResult)
+                    .progress,
+          ),
+    );
+  }
+}
+
+class IsolateVitaTransferCancelIncomingTransferAction
+    extends AsyncReduxAction<
+        IsolateController,
+        ParentIsolateState> {
+  final String sessionId;
+
+  IsolateVitaTransferCancelIncomingTransferAction({
+    required this.sessionId,
+  });
+
+  @override
+  Future<ParentIsolateState> reduce() async {
+    final connection =
+        state.discovery;
+
+    if (connection == null) {
+      throw StateError(
+        'discovery is not initialized',
+      );
+    }
+
+    await connection
+        .sendWrappedTaskAndListenStream(
+          task:
+              DiscoveryVitaTransferCancelIncomingTransferTask(
+            sessionId: sessionId,
+          ),
+        )
+        .drain<void>();
+
+    return state;
   }
 }
 
