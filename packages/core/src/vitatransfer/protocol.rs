@@ -17,6 +17,23 @@ pub const RESPONDER_BATCH_CANCELLED: u8 = 0xB5;
 pub const RESPONDER_BATCH_MANIFEST:
     u8 = 0xB6;
 
+/*
+ * Vita -> PC
+ *
+ * Nuevo formato streaming:
+ *
+ * B7 = el archivo se enviará sin SHA-256 previo.
+ *      El SHA se calculará mientras se transfieren los datos.
+ *
+ * B8 = después del EOF, Vita enviará el SHA-256 final
+ *      autenticado.
+ */
+pub const RESPONDER_FILE_OFFER_STREAMING:
+    u8 = 0xB7;
+
+pub const RESPONDER_FILE_FINAL_DIGEST:
+    u8 = 0xB8;
+
 pub const BATCH_MANIFEST_MAC_LABEL:
     &[u8] =
         b"VFT-BATCH-MANIFEST-v1";
@@ -39,6 +56,24 @@ pub const HKDF_INFO: &[u8] =
 
 pub const PAIR_LABEL: &[u8] =
     b"VFT-PAIR-CODE-v1";
+
+/*
+ * Vita -> PC streaming v2.
+ *
+ * La metadata inicial ya no contiene SHA-256.
+ */
+pub const R2I_STREAM_META_MAC_LABEL:
+    &[u8] =
+    b"VFT-R2I-STREAM-METADATA-v2";
+
+
+/*
+ * Autentica el SHA-256 calculado por Vita
+ * al terminar de transmitir el archivo.
+ */
+pub const R2I_FINAL_DIGEST_MAC_LABEL:
+    &[u8] =
+    b"VFT-R2I-FINAL-DIGEST-v1";
 
 pub const META_MAC_LABEL: &[u8] =
     b"VFT-METADATA-MAC-v1";

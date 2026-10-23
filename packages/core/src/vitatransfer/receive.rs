@@ -46,6 +46,8 @@ use super::protocol::{
     COMMAND_REQUEST_RESPONDER_FILE,
     MAX_FILENAME_SIZE,
     META_MAC_LABEL,
+    R2I_STREAM_META_MAC_LABEL,
+    R2I_FINAL_DIGEST_MAC_LABEL,
     RESPONDER_BATCH_BEGIN,
     RESPONDER_BATCH_CANCELLED,
     RESPONDER_BATCH_END,
@@ -54,6 +56,8 @@ use super::protocol::{
     TRANSFER_READY,
     TRANSFER_RESULT_ERROR,
     TRANSFER_RESULT_OK,
+    RESPONDER_FILE_OFFER_STREAMING,
+    RESPONDER_FILE_FINAL_DIGEST,
     BATCH_MANIFEST_MAC_LABEL,
     RESPONDER_BATCH_MANIFEST,
 };
@@ -202,6 +206,136 @@ fn verify_metadata_hmac(
             "Metadata HMAC verification failed"
         )
     })?;
+
+    Ok(())
+}
+
+fn verify_stream_metadata_hmac(
+    session_key: &[u8; 32],
+    filename_len_raw: &[u8; 2],
+    filename_raw: &[u8],
+    filesize_raw: &[u8; 8],
+    received_mac: &[u8; 32],
+) -> Result<()> {
+    /*
+     * Vita -> PC streaming v2:
+     *
+     * HMAC-SHA256(
+     *     session_key,
+     *
+     *     R2I_STREAM_META_MAC_LABEL
+     *     + filename_len
+     *     + filename
+     *     + filesize
+     * )
+     *
+     * Aquí NO existe todavía SHA-256 del archivo.
+     */
+    let mut mac =
+        <HmacSha256 as HmacKeyInit>
+            ::new_from_slice(
+                session_key
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "Could not initialize streaming metadata HMAC"
+                )
+            })?;
+
+
+    mac.update(
+        R2I_STREAM_META_MAC_LABEL
+    );
+
+    mac.update(
+        filename_len_raw
+    );
+
+    mac.update(
+        filename_raw
+    );
+
+    mac.update(
+        filesize_raw
+    );
+
+
+    mac.verify_slice(
+        received_mac
+    )
+    .map_err(|_| {
+        anyhow!(
+            "Streaming metadata HMAC verification failed"
+        )
+    })?;
+
+
+    Ok(())
+}
+
+fn verify_final_digest_hmac(
+    session_key: &[u8; 32],
+    filename_len_raw: &[u8; 2],
+    filename_raw: &[u8],
+    filesize_raw: &[u8; 8],
+    final_sha256: &[u8; 32],
+    received_mac: &[u8; 32],
+) -> Result<()> {
+    /*
+     * Vita -> PC streaming v2:
+     *
+     * HMAC-SHA256(
+     *     session_key,
+     *
+     *     R2I_FINAL_DIGEST_MAC_LABEL
+     *     + filename_len
+     *     + filename
+     *     + filesize
+     *     + SHA256_final
+     * )
+     */
+    let mut mac =
+        <HmacSha256 as HmacKeyInit>
+            ::new_from_slice(
+                session_key
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "Could not initialize final digest HMAC"
+                )
+            })?;
+
+
+    mac.update(
+        R2I_FINAL_DIGEST_MAC_LABEL
+    );
+
+    mac.update(
+        filename_len_raw
+    );
+
+    mac.update(
+        filename_raw
+    );
+
+    mac.update(
+        filesize_raw
+    );
+
+    mac.update(
+        final_sha256
+    );
+
+
+    mac.verify_slice(
+        received_mac
+    )
+    .map_err(|_| {
+        anyhow!(
+            "Final digest HMAC verification failed"
+        )
+    })?;
+
 
     Ok(())
 }
@@ -425,6 +559,7 @@ async fn receive_offered_file<F>(
     stream: &mut TcpStream,
     session_key: &[u8; 32],
     receive_key: &[u8; 32],
+    offer_type: u8,
     output_directory: &Path,
     file_number: u16,
     file_count: u16,
@@ -508,38 +643,98 @@ where
             filesize_raw
         );
 
+    /*
+    * =====================================================
+    * FORMATO DE METADATA
+    * =====================================================
+    *
+    * B1:
+    *     protocolo antiguo.
+    *     El SHA-256 llega ANTES del archivo.
+    *
+    * B7:
+    *     protocolo streaming.
+    *     El SHA-256 llegará DESPUÉS del EOF.
+    */
+    let streaming =
+        offer_type ==
+            RESPONDER_FILE_OFFER_STREAMING;
+
+
     let mut expected_sha256 =
         [0u8; 32];
 
-    stream
-        .read_exact(
-            &mut expected_sha256
-        )
-        .await
-        .context(
-            "Could not receive expected SHA-256"
+
+    if streaming {
+        /*
+        * Streaming v2:
+        *
+        * filename_len
+        * filename
+        * filesize
+        * metadata_hmac
+        *
+        * NO hay SHA todavía.
+        */
+        let mut received_mac =
+            [0u8; 32];
+
+
+        stream
+            .read_exact(
+                &mut received_mac
+            )
+            .await
+            .context(
+                "Could not receive streaming metadata HMAC"
+            )?;
+
+
+        verify_stream_metadata_hmac(
+            session_key,
+            &filename_len_raw,
+            &filename_raw,
+            &filesize_raw,
+            &received_mac,
         )?;
+    }
+    else {
+        /*
+        * Protocolo antiguo B1.
+        */
+        stream
+            .read_exact(
+                &mut expected_sha256
+            )
+            .await
+            .context(
+                "Could not receive expected SHA-256"
+            )?;
 
-    let mut received_mac =
-        [0u8; 32];
 
-    stream
-        .read_exact(
-            &mut received_mac
-        )
-        .await
-        .context(
-            "Could not receive metadata HMAC"
+        let mut received_mac =
+            [0u8; 32];
+
+
+        stream
+            .read_exact(
+                &mut received_mac
+            )
+            .await
+            .context(
+                "Could not receive metadata HMAC"
+            )?;
+
+
+        verify_metadata_hmac(
+            session_key,
+            &filename_len_raw,
+            &filename_raw,
+            &filesize_raw,
+            &expected_sha256,
+            &received_mac,
         )?;
-
-    verify_metadata_hmac(
-        session_key,
-        &filename_len_raw,
-        &filename_raw,
-        &filesize_raw,
-        &expected_sha256,
-        &received_mac,
-    )?;
+    }
 
     println!();
     println!(
@@ -557,7 +752,12 @@ where
             / (1024.0 * 1024.0)
     );
     println!(
-        "Metadata HMAC: OK"
+        "Metadata HMAC: OK ({})",
+        if streaming {
+            "streaming v2"
+        } else {
+            "legacy v1"
+        }
     );
     println!(
         "========================================"
@@ -982,6 +1182,111 @@ where
      * =====================================================
      */
 
+    /*
+    * =====================================================
+    * STREAMING V2: DIGEST FINAL
+    * =====================================================
+    *
+    * Después del EOF esperamos:
+    *
+    * B8
+    * SHA256        32 bytes
+    * HMAC-SHA256   32 bytes
+    */
+    if streaming {
+        let final_digest_result:
+            Result<()> =
+            async {
+                let mut marker =
+                    [0u8; 1];
+
+
+                stream
+                    .read_exact(
+                        &mut marker
+                    )
+                    .await
+                    .context(
+                        "Could not receive final digest marker"
+                    )?;
+
+
+                if marker[0] !=
+                    RESPONDER_FILE_FINAL_DIGEST
+                {
+                    bail!(
+                        "Invalid final digest marker: expected 0x{:02X}, received 0x{:02X}",
+                        RESPONDER_FILE_FINAL_DIGEST,
+                        marker[0],
+                    );
+                }
+
+
+                stream
+                    .read_exact(
+                        &mut expected_sha256
+                    )
+                    .await
+                    .context(
+                        "Could not receive final SHA-256"
+                    )?;
+
+
+                let mut final_mac =
+                    [0u8; 32];
+
+
+                stream
+                    .read_exact(
+                        &mut final_mac
+                    )
+                    .await
+                    .context(
+                        "Could not receive final digest HMAC"
+                    )?;
+
+
+                verify_final_digest_hmac(
+                    session_key,
+                    &filename_len_raw,
+                    &filename_raw,
+                    &filesize_raw,
+                    &expected_sha256,
+                    &final_mac,
+                )?;
+
+
+                Ok(())
+            }
+            .await;
+
+
+        if let Err(error) =
+            final_digest_result
+        {
+            let _ =
+                stream
+                    .write_all(
+                        &[
+                            TRANSFER_RESULT_ERROR
+                        ]
+                    )
+                    .await;
+
+
+            let _ =
+                fs::remove_file(
+                    &output_path
+                )
+                .await;
+
+
+            return Err(
+                error
+            );
+        }
+    }
+
     let integrity_ok =
         total_received
             == filesize
@@ -1261,6 +1566,9 @@ where
 
         if offer[0]
             != RESPONDER_FILE_OFFER_OK
+            &&
+            offer[0]
+                != RESPONDER_FILE_OFFER_STREAMING
         {
             bail!(
                 "Unknown file offer response: 0x{:02X}",
@@ -1273,6 +1581,7 @@ where
                 stream,
                 session_key,
                 receive_key,
+                offer[0],
                 output_directory,
                 file_number,
                 file_count,
