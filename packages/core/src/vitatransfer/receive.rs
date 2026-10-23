@@ -54,6 +54,8 @@ use super::protocol::{
     TRANSFER_READY,
     TRANSFER_RESULT_ERROR,
     TRANSFER_RESULT_OK,
+    BATCH_MANIFEST_MAC_LABEL,
+    RESPONDER_BATCH_MANIFEST,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -73,6 +75,19 @@ pub struct BatchReceiveStats {
     pub elapsed_seconds: f64,
     pub megabytes_per_second: f64,
     pub cancelled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct BatchManifestFile {
+    pub filename: String,
+    pub size: u64,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct BatchManifest {
+    pub files:
+        Vec<BatchManifestFile>,
 }
 
 fn validate_filename(
@@ -166,6 +181,221 @@ fn verify_metadata_hmac(
     })?;
 
     Ok(())
+}
+
+pub async fn receive_batch_manifest(
+    stream: &mut TcpStream,
+    session_key: &[u8; 32],
+) -> Result<BatchManifest> {
+    let mut marker =
+        [0u8; 1];
+
+
+    stream
+        .read_exact(
+            &mut marker
+        )
+        .await
+        .context(
+            "Could not receive Vita batch manifest marker"
+        )?;
+
+
+    if marker[0] !=
+        RESPONDER_BATCH_MANIFEST
+    {
+        bail!(
+            "Expected Vita batch manifest 0x{:02X}, received 0x{:02X}",
+            RESPONDER_BATCH_MANIFEST,
+            marker[0],
+        );
+    }
+
+
+    let mut count_raw =
+        [0u8; 2];
+
+
+    stream
+        .read_exact(
+            &mut count_raw
+        )
+        .await
+        .context(
+            "Could not receive Vita manifest file count"
+        )?;
+
+
+    let count =
+        u16::from_be_bytes(
+            count_raw
+        );
+
+
+    if count == 0 ||
+        count > MAX_BATCH_FILES
+    {
+        bail!(
+            "Invalid Vita manifest file count: {count}"
+        );
+    }
+
+
+    let mut mac =
+        <HmacSha256 as HmacKeyInit>
+            ::new_from_slice(
+                session_key
+            )
+            .map_err(
+                |_| {
+                    anyhow!(
+                        "Could not initialize manifest HMAC"
+                    )
+                }
+            )?;
+
+
+    mac.update(
+        BATCH_MANIFEST_MAC_LABEL
+    );
+
+
+    mac.update(
+        &count_raw
+    );
+
+
+    let mut files =
+        Vec::with_capacity(
+            count as usize
+        );
+
+
+    for _ in 0..count {
+        let mut name_len_raw =
+            [0u8; 2];
+
+
+        stream
+            .read_exact(
+                &mut name_len_raw
+            )
+            .await?;
+
+
+        let name_len =
+            u16::from_be_bytes(
+                name_len_raw
+            ) as usize;
+
+
+        if name_len == 0 ||
+            name_len > MAX_FILENAME_SIZE
+        {
+            bail!(
+                "Invalid Vita manifest filename length: {name_len}"
+            );
+        }
+
+
+        let mut name_raw =
+            vec![
+                0u8;
+                name_len
+            ];
+
+
+        stream
+            .read_exact(
+                &mut name_raw
+            )
+            .await?;
+
+
+        let filename =
+            String::from_utf8(
+                name_raw.clone()
+            )
+            .context(
+                "Vita manifest filename is not UTF-8"
+            )?;
+
+
+        validate_filename(
+            &filename
+        )?;
+
+
+        let mut size_raw =
+            [0u8; 8];
+
+
+        stream
+            .read_exact(
+                &mut size_raw
+            )
+            .await?;
+
+
+        let size =
+            u64::from_be_bytes(
+                size_raw
+            );
+
+
+        mac.update(
+            &name_len_raw
+        );
+
+        mac.update(
+            &name_raw
+        );
+
+        mac.update(
+            &size_raw
+        );
+
+
+        files.push(
+            BatchManifestFile {
+                filename,
+                size,
+            }
+        );
+    }
+
+
+    let mut received_mac =
+        [0u8; 32];
+
+
+    stream
+        .read_exact(
+            &mut received_mac
+        )
+        .await
+        .context(
+            "Could not receive Vita manifest HMAC"
+        )?;
+
+
+    mac.verify_slice(
+        &received_mac
+    )
+    .map_err(
+        |_| {
+            anyhow!(
+                "Vita batch manifest HMAC verification failed"
+            )
+        }
+    )?;
+
+
+    Ok(
+        BatchManifest {
+            files,
+        }
+    )
 }
 
 async fn receive_offered_file(

@@ -6,10 +6,11 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `run_send_with_progress`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `VitaTransferHandshakeState`
+// These functions are ignored because they are not marked as `pub`: `incoming_sessions`, `run_send_with_progress`, `vita_identity_fingerprint`, `vitatransfer_receive_directory`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `VitaTransferHandshakeState`, `VitaTransferIncomingSessionState`
 
-Future<RsVitaTransferDiscovery> startVitatransferDiscovery() => RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery();
+Future<RsVitaTransferDiscovery> startVitatransferDiscovery({required String pcName}) =>
+    RustLib.instance.api.crateApiVitatransferStartVitatransferDiscovery(pcName: pcName);
 
 Future<RsVitaTransferSendResult> sendVitatransferFiles({required String host, required List<String> paths}) =>
     RustLib.instance.api.crateApiVitatransferSendVitatransferFiles(host: host, paths: paths);
@@ -20,6 +21,8 @@ Future<RsVitaTransferSendSession> startVitatransferSend({required String host, r
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsVitaTransferDiscovery>>
 abstract class RsVitaTransferDiscovery implements RustOpaqueInterface {
   Stream<RsVitaTransferDevice> listen();
+
+  Stream<RsVitaTransferIncomingOffer> listenIncoming();
 
   Future<void> stop();
 }
@@ -72,6 +75,56 @@ class RsVitaTransferDevice {
           identityPublic == other.identityPublic &&
           canSend == other.canSend &&
           canReceive == other.canReceive;
+}
+
+class RsVitaTransferIncomingFile {
+  final String id;
+  final String fileName;
+  final BigInt size;
+
+  const RsVitaTransferIncomingFile({
+    required this.id,
+    required this.fileName,
+    required this.size,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ fileName.hashCode ^ size.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsVitaTransferIncomingFile && runtimeType == other.runtimeType && id == other.id && fileName == other.fileName && size == other.size;
+}
+
+class RsVitaTransferIncomingOffer {
+  final String sessionId;
+  final String senderName;
+  final String senderHost;
+  final String senderFingerprint;
+  final List<RsVitaTransferIncomingFile> files;
+
+  const RsVitaTransferIncomingOffer({
+    required this.sessionId,
+    required this.senderName,
+    required this.senderHost,
+    required this.senderFingerprint,
+    required this.files,
+  });
+
+  @override
+  int get hashCode => sessionId.hashCode ^ senderName.hashCode ^ senderHost.hashCode ^ senderFingerprint.hashCode ^ files.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RsVitaTransferIncomingOffer &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          senderName == other.senderName &&
+          senderHost == other.senderHost &&
+          senderFingerprint == other.senderFingerprint &&
+          files == other.files;
 }
 
 class RsVitaTransferProgress {

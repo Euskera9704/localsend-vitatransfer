@@ -1,4 +1,13 @@
+use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
+use std::sync::{
+    OnceLock,
+    atomic::{
+        AtomicU64,
+        Ordering,
+    },
+};
 
 use crate::frb_generated::StreamSink;
 
@@ -10,15 +19,108 @@ use localsend::vitatransfer::{
         HandshakeStatus,
     },
     identity,
+    receive,
     transfer,
 };
 
 use tokio::io::AsyncWriteExt;
-use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::net::{
+    TcpListener,
+    TcpStream,
+    UdpSocket,
+};
+
+use tokio::sync::{
+    Mutex,
+    mpsc,
+};
 
 use tokio_util::sync::CancellationToken;
 
+const PC_DISCOVERY_PORT:
+    u16 = 5002;
+
+const PC_RECEIVE_PORT:
+    u16 = 5002;
+
+const PC_DISCOVERY_QUERY_MAGIC:
+    &[u8] = b"VTFHOSTQ";
+
+const PC_DISCOVERY_REPLY_MAGIC:
+    &[u8] = b"VTFHOST1";
+
+const PC_DISCOVERY_VERSION:
+    u8 = 0x01;
+
+
+
+const PC_DISCOVERY_MULTICAST:
+    Ipv4Addr =
+        Ipv4Addr::new(
+            239,
+            255,
+            42,
+            99,
+        );
+
+
+/*
+ * =========================================================
+ * DESTINO TEMPORAL VITA -> PC
+ * =========================================================
+ *
+ * Para esta primera integración funcional guardamos en:
+ *
+ * Windows:
+ *     %USERPROFILE%\Downloads\VitaTransfer
+ *
+ * Linux/macOS:
+ *     $HOME/Downloads/VitaTransfer
+ *
+ * Después conectaremos esto con la carpeta configurada
+ * realmente por LocalSend.
+ */
+fn vitatransfer_receive_directory(
+) -> PathBuf {
+    if let Some(profile) =
+        std::env::var_os(
+            "USERPROFILE"
+        )
+    {
+        return PathBuf::from(
+            profile
+        )
+        .join(
+            "Downloads"
+        )
+        .join(
+            "VitaTransfer"
+        );
+    }
+
+
+    if let Some(home) =
+        std::env::var_os(
+            "HOME"
+        )
+    {
+        return PathBuf::from(
+            home
+        )
+        .join(
+            "Downloads"
+        )
+        .join(
+            "VitaTransfer"
+        );
+    }
+
+
+    std::env::temp_dir()
+        .join(
+            "VitaTransfer"
+        )
+}
 
 /*
  * =========================================================
@@ -80,6 +182,106 @@ pub struct RsVitaTransferDevice {
     pub can_receive: bool,
 }
 
+/*
+ * =========================================================
+ * OFERTA ENTRANTE VITA -> PC
+ * =========================================================
+ */
+
+pub struct RsVitaTransferIncomingFile {
+    pub id: String,
+    pub file_name: String,
+    pub size: u64,
+}
+
+
+pub struct RsVitaTransferIncomingOffer {
+    pub session_id: String,
+
+    pub sender_name: String,
+    pub sender_host: String,
+    pub sender_fingerprint: String,
+
+    pub files:
+        Vec<RsVitaTransferIncomingFile>,
+}
+
+
+/*
+ * Estado privado.
+ *
+ * NO viaja a Flutter.
+ *
+ * Mantiene exactamente la misma conexión TCP y
+ * las mismas claves derivadas durante el handshake.
+ */
+struct VitaTransferIncomingSessionState {
+    stream:
+        TcpStream,
+
+    handshake_result:
+        handshake::HandshakeResult,
+}
+
+
+/*
+ * =========================================================
+ * REGISTRO DE SESIONES ENTRANTES
+ * =========================================================
+ */
+
+static NEXT_INCOMING_SESSION_ID:
+    AtomicU64 =
+        AtomicU64::new(1);
+
+
+static INCOMING_SESSIONS:
+    OnceLock<
+        Mutex<
+            HashMap<
+                String,
+                VitaTransferIncomingSessionState
+            >
+        >
+    > =
+        OnceLock::new();
+
+
+fn incoming_sessions(
+) -> &'static Mutex<
+    HashMap<
+        String,
+        VitaTransferIncomingSessionState
+    >
+> {
+    INCOMING_SESSIONS
+        .get_or_init(
+            || {
+                Mutex::new(
+                    HashMap::new()
+                )
+            }
+        )
+}
+
+
+fn vita_identity_fingerprint(
+    identity: &[u8; 32],
+) -> String {
+    identity
+        .iter()
+        .take(8)
+        .map(
+            |byte| {
+                format!(
+                    "{byte:02X}"
+                )
+            }
+        )
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 
 /*
  * =========================================================
@@ -101,9 +303,57 @@ pub struct RsVitaTransferDevice {
  */
 
 pub struct RsVitaTransferDiscovery {
-    socket: Mutex<Option<UdpSocket>>,
+    /*
+     * Listener de anuncios PS Vita:
+     *
+     * 239.255.42.99:5001
+     */
+    socket:
+        Mutex<Option<UdpSocket>>,
 
-    cancel: CancellationToken,
+    /*
+     * Listener de consultas iniciadas por Vita:
+     *
+     * 239.255.42.99:5002
+     */
+    pc_discovery_socket:
+        Mutex<Option<UdpSocket>>,
+
+    /*
+    * Listener TCP para conexiones iniciadas
+    * por la PS Vita.
+    *
+    * TCP 5002.
+    */
+    pc_receive_listener:
+        Mutex<Option<TcpListener>>,
+
+    /*
+     * Respuesta ya construida.
+     */
+    pc_discovery_reply:
+        Vec<u8>,
+
+    /*
+    * Ofertas Vita -> PC listas para ser
+    * entregadas a Flutter.
+    */
+    incoming_offer_tx:
+        mpsc::UnboundedSender<
+            RsVitaTransferIncomingOffer
+        >,
+
+    incoming_offer_rx:
+        Mutex<
+            Option<
+                mpsc::UnboundedReceiver<
+                    RsVitaTransferIncomingOffer
+                >
+            >
+        >,
+
+    cancel:
+        CancellationToken,
 }
 
 
@@ -114,17 +364,217 @@ pub struct RsVitaTransferDiscovery {
  */
 
 pub async fn start_vitatransfer_discovery(
+    pc_name: String,
 ) -> anyhow::Result<RsVitaTransferDiscovery> {
+    /*
+     * =====================================================
+     * DISCOVERY VITA -> PC YA EXISTENTE
+     * =====================================================
+     */
+
     let socket =
         discovery::bind_listener()
             .await?;
 
+
+    /*
+     * =====================================================
+     * DISCOVERY INVERSO: VITA BUSCA PC
+     * =====================================================
+     */
+
+    let pc_discovery_socket =
+        UdpSocket::bind(
+            (
+                Ipv4Addr::UNSPECIFIED,
+                PC_DISCOVERY_PORT,
+            )
+        )
+        .await?;
+
+
+    pc_discovery_socket
+        .join_multicast_v4(
+            PC_DISCOVERY_MULTICAST,
+            Ipv4Addr::UNSPECIFIED,
+        )?;
+
+    /*
+    * =====================================================
+    * LISTENER TCP VITA -> PC
+    * =====================================================
+    *
+    * La Vita será quien haga connect().
+    */
+
+    let pc_receive_listener =
+        TcpListener::bind(
+            (
+                Ipv4Addr::UNSPECIFIED,
+                PC_RECEIVE_PORT,
+            )
+        )
+        .await?;
+
+    /*
+     * =====================================================
+     * IDENTIDAD PC
+     * =====================================================
+     *
+     * Es solamente identity hint en discovery.
+     *
+     * La autenticación real seguirá siendo el handshake
+     * firmado Ed25519/X25519.
+     */
+
+    let signing_key =
+        identity::load_existing_identity()?;
+
+
+    let identity_public =
+        signing_key
+            .verifying_key()
+            .to_bytes();
+
+
+    /*
+     * =====================================================
+     * CONSTRUIR RESPUESTA
+     * =====================================================
+     *
+     * 8 bytes  magic "VTFHOST1"
+     * 1 byte   version
+     * 2 bytes  TCP port big endian
+     * 32 bytes Ed25519 public key
+     * 1 byte   name length
+     * N bytes  name
+     */
+
+    /*
+    * =====================================================
+    * NOMBRE REAL DE LOCALSEND
+    * =====================================================
+    *
+    * Recibimos el alias configurado por el usuario
+    * en LocalSend.
+    *
+    * La Vita admite como máximo 63 bytes para este
+    * campo de discovery.
+    */
+
+    let pc_name =
+        pc_name
+            .trim();
+
+
+    let pc_name =
+        if pc_name.is_empty() {
+            "LocalSend PC"
+        } else {
+            pc_name
+        };
+
+
+    let mut name_end =
+        pc_name
+            .len()
+            .min(63);
+
+
+    while name_end > 0 && !pc_name.is_char_boundary(name_end) {
+        name_end -=
+            1;
+    }
+
+
+    let name =
+        pc_name[..name_end]
+            .as_bytes();
+
+
+    let mut pc_discovery_reply =
+        Vec::with_capacity(
+            8 +
+            1 +
+            2 +
+            identity_public.len() +
+            1 +
+            name.len()
+        );
+
+
+    pc_discovery_reply
+        .extend_from_slice(
+            PC_DISCOVERY_REPLY_MAGIC
+        );
+
+
+    pc_discovery_reply
+        .push(
+            PC_DISCOVERY_VERSION
+        );
+
+
+    pc_discovery_reply
+        .extend_from_slice(
+            &PC_RECEIVE_PORT
+                .to_be_bytes()
+        );
+
+
+    pc_discovery_reply
+        .extend_from_slice(
+            &identity_public
+        );
+
+
+    pc_discovery_reply
+        .push(
+            name.len() as u8
+        );
+
+
+    pc_discovery_reply
+        .extend_from_slice(
+            name
+        );
+
+    let (
+        incoming_offer_tx,
+        incoming_offer_rx,
+    ) =
+        mpsc::unbounded_channel();
 
     Ok(
         RsVitaTransferDiscovery {
             socket:
                 Mutex::new(
                     Some(socket)
+                ),
+
+            pc_discovery_socket:
+                Mutex::new(
+                    Some(
+                        pc_discovery_socket
+                    )
+                ),
+
+            pc_receive_listener:
+                Mutex::new(
+                    Some(
+                        pc_receive_listener
+                    )
+                ),
+
+            pc_discovery_reply,
+
+            incoming_offer_tx,
+
+            incoming_offer_rx:
+                Mutex::new(
+                    Some(
+                        incoming_offer_rx
+                    )
                 ),
 
             cancel:
@@ -183,9 +633,70 @@ impl RsVitaTransferDiscovery {
             };
 
 
+        let pc_discovery_socket =
+            {
+                let mut guard =
+                    self
+                        .pc_discovery_socket
+                        .lock()
+                        .await;
+
+
+                match guard.take() {
+                    Some(socket) => {
+                        socket
+                    }
+
+
+                    None => {
+                        let _ =
+                            sink.add_error(
+                                anyhow::anyhow!(
+                                    "VitaTransfer PC discovery responder is already being listened to"
+                                )
+                            );
+
+
+                        return;
+                    }
+                }
+            };
+
+
+        let pc_receive_listener =
+        {
+            let mut guard =
+                self
+                    .pc_receive_listener
+                    .lock()
+                    .await;
+
+
+            match guard.take() {
+                Some(listener) => {
+                    listener
+                }
+
+
+                None => {
+                    let _ =
+                        sink.add_error(
+                            anyhow::anyhow!(
+                                "VitaTransfer PC receive listener is already being listened to"
+                            )
+                        );
+
+
+                    return;
+                }
+            }
+        };
+
         let mut buffer =
             [0u8; 512];
 
+        let mut pc_discovery_buffer =
+            [0u8; 128];
 
         loop {
             tokio::select! {
@@ -282,6 +793,398 @@ impl RsVitaTransferDiscovery {
 
 
                 /*
+                * =================================================
+                * VITA PREGUNTA POR PCs DISPONIBLES
+                * =================================================
+                */
+
+                result =
+                    pc_discovery_socket
+                        .recv_from(
+                            &mut pc_discovery_buffer
+                        )
+                => {
+                    let (
+                        length,
+                        source,
+                    ) =
+                        match result {
+                            Ok(result) => {
+                                result
+                            }
+
+
+                            Err(error) => {
+                                let _ =
+                                    sink.add_error(
+                                        anyhow::anyhow!(
+                                            "VitaTransfer PC discovery receive failed: {error}"
+                                        )
+                                    );
+
+
+                                break;
+                            }
+                        };
+
+
+                    /*
+                    * Solo respondemos a:
+                    *
+                    *     VTFHOSTQ
+                    */
+
+                    if length ==
+                        PC_DISCOVERY_QUERY_MAGIC.len()
+                        &&
+                        &pc_discovery_buffer[..length] ==
+                        PC_DISCOVERY_QUERY_MAGIC
+                    {
+                        println!(
+                            "[VitaTransfer] PS Vita requested PC discovery from {source}"
+                        );
+
+
+                        if let Err(error) =
+                            pc_discovery_socket
+                                .send_to(
+                                    &self.pc_discovery_reply,
+                                    source,
+                                )
+                                .await
+                        {
+                            eprintln!(
+                                "[VitaTransfer] Could not send PC discovery reply: {error}"
+                            );
+                        }
+                    }
+                }
+
+
+                /*
+                * =================================================
+                * CONEXION TCP INICIADA POR VITA
+                * =================================================
+                */
+
+                result =
+                    pc_receive_listener
+                        .accept()
+                => {
+                    match result {
+                        Ok((
+                            mut stream,
+                            source,
+                        )) => {
+                            println!(
+                                "[VitaTransfer] Incoming Vita TCP connection from {source}"
+                            );
+
+
+                            /*
+                            * =================================================
+                            * HANDSHAKE SEGURO
+                            * =================================================
+                            *
+                            * Aunque la Vita haya iniciado TCP,
+                            * el PC sigue siendo el iniciador criptográfico.
+                            */
+
+                            let signing_key =
+                                match identity::load_existing_identity() {
+                                    Ok(key) => {
+                                        key
+                                    }
+
+
+                                    Err(error) => {
+                                        eprintln!(
+                                            "[VitaTransfer] Could not load PC identity: {error}"
+                                        );
+
+                                        continue;
+                                    }
+                                };
+
+
+                            let handshake_status =
+                                match handshake::perform_handshake(
+                                    &mut stream,
+                                    &signing_key,
+                                )
+                                .await
+                                {
+                                    Ok(status) => {
+                                        status
+                                    }
+
+
+                                    Err(error) => {
+                                        eprintln!(
+                                            "[VitaTransfer] Incoming Vita handshake failed: {error}"
+                                        );
+
+                                        continue;
+                                    }
+                                };
+
+
+                            match handshake_status {
+                                HandshakeStatus::Established(
+                                    result
+                                ) => {
+                                    println!(
+                                        "[VitaTransfer] Incoming Vita secure handshake established"
+                                    );
+
+
+                                    /*
+                                    * =================================================
+                                    * DESTINO
+                                    * =================================================
+                                    */
+
+                                    let output_directory =
+                                        vitatransfer_receive_directory();
+
+
+                                    println!(
+                                        "[VitaTransfer] Vita receive directory: {}",
+                                        output_directory.display()
+                                    );
+
+                                    let manifest =
+                                        match receive::receive_batch_manifest(
+                                            &mut stream,
+
+                                            &result
+                                                .keys
+                                                .session_key,
+                                        )
+                                        .await
+                                        {
+                                            Ok(manifest) => {
+                                                manifest
+                                            }
+
+                                            Err(error) => {
+                                                eprintln!(
+                                                    "[VitaTransfer] Could not receive Vita manifest: {error}"
+                                                );
+
+                                                continue;
+                                            }
+                                        };
+
+
+                                    println!(
+                                        "[VitaTransfer] Incoming Vita offer: {} file(s)",
+                                        manifest.files.len()
+                                    );
+
+
+                                    for file in &manifest.files {
+                                        println!(
+                                            "[VitaTransfer]   {} ({:.2} MB)",
+                                            file.filename,
+                                            file.size as f64 /
+                                                (1024.0 * 1024.0),
+                                        );
+                                    }
+
+                                    println!(
+                                        "[VitaTransfer] Manifest received successfully; waiting for UI integration"
+                                    );
+
+                                    /*
+                                    * =========================================================
+                                    * CREAR SESION ENTRANTE PERSISTENTE
+                                    * =========================================================
+                                    */
+
+                                    let session_number =
+                                        NEXT_INCOMING_SESSION_ID
+                                            .fetch_add(
+                                                1,
+                                                Ordering::Relaxed,
+                                            );
+
+
+                                    let session_id =
+                                        format!(
+                                            "vita-{session_number}"
+                                        );
+
+
+                                    let sender_fingerprint =
+                                        vita_identity_fingerprint(
+                                            &result
+                                                .vita_identity_public
+                                        );
+
+
+                                    let incoming_files =
+                                        manifest
+                                            .files
+                                            .iter()
+                                            .enumerate()
+                                            .map(
+                                                |(
+                                                    index,
+                                                    file,
+                                                )| {
+                                                    RsVitaTransferIncomingFile {
+                                                        id:
+                                                            format!(
+                                                                "vita-file-{index}"
+                                                            ),
+
+                                                        file_name:
+                                                            file
+                                                                .filename
+                                                                .clone(),
+
+                                                        size:
+                                                            file.size,
+                                                    }
+                                                }
+                                            )
+                                            .collect::<Vec<_>>();
+
+
+                                    let offer =
+                                        RsVitaTransferIncomingOffer {
+                                            session_id:
+                                                session_id.clone(),
+
+                                            sender_name:
+                                                "PS Vita"
+                                                    .to_string(),
+
+                                            sender_host:
+                                                source
+                                                    .ip()
+                                                    .to_string(),
+
+                                            sender_fingerprint,
+
+                                            files:
+                                                incoming_files,
+                                        };
+
+
+                                    /*
+                                    * Guardamos PRIMERO la sesión.
+                                    *
+                                    * A partir de aquí el TcpStream ya no pertenece
+                                    * a esta rama: queda retenido por el registro.
+                                    */
+                                    {
+                                        let mut sessions =
+                                            incoming_sessions()
+                                                .lock()
+                                                .await;
+
+
+                                        sessions.insert(
+                                            session_id.clone(),
+
+                                            VitaTransferIncomingSessionState {
+                                                stream,
+
+                                                handshake_result:
+                                                    result,
+                                            },
+                                        );
+                                    }
+
+
+                                    /*
+                                    * Ahora avisamos a Flutter.
+                                    */
+                                    if self
+                                        .incoming_offer_tx
+                                        .send(
+                                            offer
+                                        )
+                                        .is_err()
+                                    {
+                                        eprintln!(
+                                            "[VitaTransfer] No Dart listener available for incoming Vita offer"
+                                        );
+
+
+                                        /*
+                                        * Si Dart desapareció, sacamos de nuevo la
+                                        * sesión para no dejar el socket colgado.
+                                        */
+                                        let removed =
+                                            {
+                                                let mut sessions =
+                                                    incoming_sessions()
+                                                        .lock()
+                                                        .await;
+
+
+                                                sessions.remove(
+                                                    &session_id
+                                                )
+                                            };
+
+
+                                        if let Some(
+                                            mut incoming_session
+                                        ) = removed
+                                        {
+                                            let _ =
+                                                transfer::close_session(
+                                                    &mut incoming_session
+                                                        .stream
+                                                )
+                                                .await;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        println!(
+                                            "[VitaTransfer] Incoming Vita session retained: {session_id}"
+                                        );
+                                    }
+
+
+                                }
+
+
+                                HandshakeStatus::PairingRequired(
+                                    pending
+                                ) => {
+                                    println!(
+                                        "[VitaTransfer] Incoming Vita pairing required. SAS: {}",
+                                        pending.pairing_code
+                                    );
+
+
+                                    /*
+                                    * El pairing entrante con UI Flutter lo
+                                    * implementaremos después.
+                                    *
+                                    * En esta prueba esperamos que NO entre aquí,
+                                    * porque PC y Vita ya son de confianza.
+                                    */
+                                }
+                            }
+                        }
+
+
+                        Err(error) => {
+                            eprintln!(
+                                "[VitaTransfer] Vita TCP accept failed: {error}"
+                            );
+                        }
+                    }
+                }
+
+                /*
                  * =================================================
                  * STOP
                  * =================================================
@@ -289,6 +1192,85 @@ impl RsVitaTransferDiscovery {
 
                 _ =
                     self.cancel.cancelled()
+                => {
+                    break;
+                }
+            }
+        }
+    }
+
+    /*
+    * =========================================================
+    * OFERTAS ENTRANTES VITA -> PC
+    * =========================================================
+    */
+
+    pub async fn listen_incoming(
+        &self,
+
+        sink:
+            StreamSink<
+                RsVitaTransferIncomingOffer
+            >,
+    ) {
+        let mut receiver =
+            {
+                let mut guard =
+                    self
+                        .incoming_offer_rx
+                        .lock()
+                        .await;
+
+
+                match guard.take() {
+                    Some(receiver) => {
+                        receiver
+                    }
+
+
+                    None => {
+                        let _ =
+                            sink.add_error(
+                                anyhow::anyhow!(
+                                    "VitaTransfer incoming offer stream is already being listened to"
+                                )
+                            );
+
+
+                        return;
+                    }
+                }
+            };
+
+
+        loop {
+            tokio::select! {
+                offer =
+                    receiver.recv()
+                => {
+                    match offer {
+                        Some(offer) => {
+                            if sink
+                                .add(
+                                    offer
+                                )
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+
+
+                        None => {
+                            break;
+                        }
+                    }
+                }
+
+
+                _ =
+                    self.cancel
+                        .cancelled()
                 => {
                     break;
                 }

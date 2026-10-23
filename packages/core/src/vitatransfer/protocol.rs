@@ -14,6 +14,12 @@ pub const RESPONDER_FILE_OFFER_ERROR: u8 = 0xB2;
 pub const RESPONDER_BATCH_BEGIN: u8 = 0xB3;
 pub const RESPONDER_BATCH_END: u8 = 0xB4;
 pub const RESPONDER_BATCH_CANCELLED: u8 = 0xB5;
+pub const RESPONDER_BATCH_MANIFEST:
+    u8 = 0xB6;
+
+pub const BATCH_MANIFEST_MAC_LABEL:
+    &[u8] =
+        b"VFT-BATCH-MANIFEST-v1";
 
 pub const TRANSFER_READY: u8 = 0xA5;
 

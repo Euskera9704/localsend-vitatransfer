@@ -63,9 +63,40 @@ class DiscoveryService {
     _vitaTransferListening = true;
 
     try {
-      final discovery = await startVitatransferDiscovery();
+      final discovery = await
+          startVitatransferDiscovery(
+            pcName: _ref.read(syncProvider).alias,
+          );
 
       _logger.info('VitaTransfer discovery started');
+
+      final incomingSubscription =
+          discovery
+              .listenIncoming()
+              .listen(
+                (offer) {
+                  _logger.info(
+                    '[VitaTransfer] Incoming offer: '
+                    '${offer.sessionId} | '
+                    '${offer.senderName} | '
+                    '${offer.senderHost}',
+                  );
+
+                  for (final file in offer.files) {
+                    _logger.info(
+                      '[VitaTransfer]   '
+                      '${file.fileName} '
+                      '(${file.size} bytes)',
+                    );
+                  }
+                },
+                onError: (Object error) {
+                  _logger.warning(
+                    '[VitaTransfer] Incoming offer stream ERROR',
+                    error,
+                  );
+                },
+              );
 
       await for (final vita in discovery.listen()) {
         _logger.info(
@@ -124,6 +155,7 @@ class DiscoveryService {
           devices.add(device);
         }
       }
+    await incomingSubscription.cancel();
     } catch (e) {
       _logger.warning(
         'VitaTransfer discovery stopped with an error',

@@ -239,6 +239,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsVitaTransferDevice> dco_decode_StreamSink_rs_vita_transfer_device_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<RsVitaTransferIncomingOffer> dco_decode_StreamSink_rs_vita_transfer_incoming_offer_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<RsVitaTransferProgress> dco_decode_StreamSink_rs_vita_transfer_progress_Sse(dynamic raw);
 
   @protected
@@ -385,6 +388,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> dco_decode_list_rs_device_log(dynamic raw);
 
   @protected
+  List<RsVitaTransferIncomingFile> dco_decode_list_rs_vita_transfer_incoming_file(dynamic raw);
+
+  @protected
   LsHttpClientVersion dco_decode_ls_http_client_version(dynamic raw);
 
   @protected
@@ -492,6 +498,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsVitaTransferDevice dco_decode_rs_vita_transfer_device(dynamic raw);
+
+  @protected
+  RsVitaTransferIncomingFile dco_decode_rs_vita_transfer_incoming_file(dynamic raw);
+
+  @protected
+  RsVitaTransferIncomingOffer dco_decode_rs_vita_transfer_incoming_offer(dynamic raw);
 
   @protected
   RsVitaTransferProgress dco_decode_rs_vita_transfer_progress(dynamic raw);
@@ -751,6 +763,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<RsVitaTransferDevice> sse_decode_StreamSink_rs_vita_transfer_device_Sse(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<RsVitaTransferIncomingOffer> sse_decode_StreamSink_rs_vita_transfer_incoming_offer_Sse(SseDeserializer deserializer);
+
+  @protected
   RustStreamSink<RsVitaTransferProgress> sse_decode_StreamSink_rs_vita_transfer_progress_Sse(SseDeserializer deserializer);
 
   @protected
@@ -897,6 +912,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RsDeviceLog> sse_decode_list_rs_device_log(SseDeserializer deserializer);
 
   @protected
+  List<RsVitaTransferIncomingFile> sse_decode_list_rs_vita_transfer_incoming_file(SseDeserializer deserializer);
+
+  @protected
   LsHttpClientVersion sse_decode_ls_http_client_version(SseDeserializer deserializer);
 
   @protected
@@ -1006,6 +1024,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RsVitaTransferDevice sse_decode_rs_vita_transfer_device(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferIncomingFile sse_decode_rs_vita_transfer_incoming_file(SseDeserializer deserializer);
+
+  @protected
+  RsVitaTransferIncomingOffer sse_decode_rs_vita_transfer_incoming_offer(SseDeserializer deserializer);
 
   @protected
   RsVitaTransferProgress sse_decode_rs_vita_transfer_progress(SseDeserializer deserializer);
@@ -1315,6 +1339,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_StreamSink_rs_vita_transfer_device_Sse(RustStreamSink<RsVitaTransferDevice> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_StreamSink_rs_vita_transfer_incoming_offer_Sse(RustStreamSink<RsVitaTransferIncomingOffer> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_StreamSink_rs_vita_transfer_progress_Sse(RustStreamSink<RsVitaTransferProgress> self, SseSerializer serializer);
 
   @protected
@@ -1462,6 +1489,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_rs_device_log(List<RsDeviceLog> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_rs_vita_transfer_incoming_file(List<RsVitaTransferIncomingFile> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ls_http_client_version(LsHttpClientVersion self, SseSerializer serializer);
 
   @protected
@@ -1572,6 +1602,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_rs_vita_transfer_device(RsVitaTransferDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_vita_transfer_incoming_file(RsVitaTransferIncomingFile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_rs_vita_transfer_incoming_offer(RsVitaTransferIncomingOffer self, SseSerializer serializer);
 
   @protected
   void sse_encode_rs_vita_transfer_progress(RsVitaTransferProgress self, SseSerializer serializer);
