@@ -145,7 +145,7 @@
 
             alias: vita.name,
 
-            deviceModel: null,
+            deviceModel: 'PS Vita',
 
             /*
             * DeviceType sigue describiendo la clase física

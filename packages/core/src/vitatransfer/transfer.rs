@@ -38,7 +38,11 @@ use tokio::net::TcpStream;
 use super::protocol::{
     CHUNK_SIZE,
     COMMAND_FILE,
+    COMMAND_FILE_STREAMING,
+    INITIATOR_FILE_FINAL_DIGEST,
     COMMAND_SESSION_END,
+    I2R_FINAL_DIGEST_MAC_LABEL,
+    I2R_STREAM_META_MAC_LABEL,
     MAX_FILENAME_SIZE,
     METADATA_READY,
     META_MAC_LABEL,
@@ -259,6 +263,144 @@ fn metadata_hmac(
     Ok(result)
 }
 
+fn streaming_metadata_hmac(
+    session_key: &[u8; 32],
+    filename_len: &[u8; 2],
+    filename: &[u8],
+    filesize: &[u8; 8],
+) -> Result<[u8; 32]> {
+    /*
+     * PC -> Vita streaming:
+     *
+     * HMAC-SHA256(
+     *     session_key,
+     *
+     *     I2R_STREAM_META_MAC_LABEL
+     *     + filename_len
+     *     + filename
+     *     + filesize
+     * )
+     *
+     * No incluye SHA-256 porque todavía
+     * no se ha calculado.
+     */
+
+    let mut mac =
+        <HmacSha256 as HmacKeyInit>
+            ::new_from_slice(
+                session_key
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "Could not initialize streaming metadata HMAC"
+                )
+            })?;
+
+
+    mac.update(
+        I2R_STREAM_META_MAC_LABEL
+    );
+
+    mac.update(
+        filename_len
+    );
+
+    mac.update(
+        filename
+    );
+
+    mac.update(
+        filesize
+    );
+
+
+    let digest =
+        mac.finalize()
+            .into_bytes();
+
+
+    let mut result =
+        [0u8; 32];
+
+    result.copy_from_slice(
+        &digest
+    );
+
+
+    Ok(result)
+}
+
+
+fn final_digest_hmac(
+    session_key: &[u8; 32],
+    filename_len: &[u8; 2],
+    filename: &[u8],
+    filesize: &[u8; 8],
+    sha256: &[u8; 32],
+) -> Result<[u8; 32]> {
+    /*
+     * PC -> Vita streaming:
+     *
+     * HMAC-SHA256(
+     *     session_key,
+     *
+     *     I2R_FINAL_DIGEST_MAC_LABEL
+     *     + filename_len
+     *     + filename
+     *     + filesize
+     *     + SHA256_final
+     * )
+     */
+
+    let mut mac =
+        <HmacSha256 as HmacKeyInit>
+            ::new_from_slice(
+                session_key
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "Could not initialize final digest HMAC"
+                )
+            })?;
+
+
+    mac.update(
+        I2R_FINAL_DIGEST_MAC_LABEL
+    );
+
+    mac.update(
+        filename_len
+    );
+
+    mac.update(
+        filename
+    );
+
+    mac.update(
+        filesize
+    );
+
+    mac.update(
+        sha256
+    );
+
+
+    let digest =
+        mac.finalize()
+            .into_bytes();
+
+
+    let mut result =
+        [0u8; 32];
+
+    result.copy_from_slice(
+        &digest
+    );
+
+
+    Ok(result)
+}
+
 pub async fn send_file_with_progress(
     stream: &mut TcpStream,
     session_key: &[u8; 32],
@@ -338,38 +480,23 @@ pub async fn send_file_with_progress(
     );
 
     /*
-     * =====================================================
-     * SHA-256 COMPLETO
-     * =====================================================
-     */
-
-    println!(
-        "Calculando SHA-256..."
-    );
-
-    let expected_sha256 =
-        calculate_sha256(
-            path
-        )?;
-
-    println!(
-        "SHA-256: {:02x?}",
-        expected_sha256
-    );
-
-    /*
-     * =====================================================
-     * COMMAND_FILE
-     * =====================================================
-     */
+    * =====================================================
+    * COMMAND_FILE_STREAMING
+    * =====================================================
+    *
+    * Ya no calculamos SHA-256 antes de empezar.
+    *
+    * El hash se irá construyendo con los mismos bytes
+    * que leemos para cifrar y enviar.
+    */
 
     stream
         .write_all(
-            &[COMMAND_FILE]
+            &[COMMAND_FILE_STREAMING]
         )
         .await
         .context(
-            "Could not send COMMAND_FILE"
+            "Could not send COMMAND_FILE_STREAMING"
         )?;
 
     let mut metadata_ready =
@@ -412,12 +539,11 @@ pub async fn send_file_with_progress(
         filesize.to_be_bytes();
 
     let metadata_mac =
-        metadata_hmac(
+        streaming_metadata_hmac(
             session_key,
             &filename_len_raw,
             filename_raw,
             &filesize_raw,
-            &expected_sha256,
         )?;
 
     stream
@@ -435,12 +561,6 @@ pub async fn send_file_with_progress(
     stream
         .write_all(
             &filesize_raw
-        )
-        .await?;
-
-    stream
-        .write_all(
-            &expected_sha256
         )
         .await?;
 
@@ -515,6 +635,12 @@ pub async fn send_file_with_progress(
             0u8;
             CHUNK_SIZE
         ];
+    /*
+    * SHA-256 calculado simultáneamente
+    * con la transferencia.
+    */
+    let mut hasher =
+        Sha256::new();
 
     let start =
         Instant::now();
@@ -522,10 +648,27 @@ pub async fn send_file_with_progress(
     let mut total_sent =
         0u64;
 
+    /*
+    * El primer chunk es pequeño para que la transferencia
+    * empiece visualmente casi de inmediato.
+    *
+    * A partir del segundo volvemos al tamaño normal de
+    * 16 MiB para conservar el throughput.
+    */
+    let mut first_chunk =
+        true;
+
     loop {
+        let read_size =
+            if first_chunk {
+                1 * 1024 * 1024
+            } else {
+                CHUNK_SIZE
+            };
+
         let count =
             file.read(
-                &mut plaintext
+                &mut plaintext[..read_size]
             )
             .with_context(|| {
                 format!(
@@ -537,6 +680,14 @@ pub async fn send_file_with_progress(
         if count == 0 {
             break;
         }
+
+        /*
+        * Exactamente los mismos bytes que vamos
+        * a cifrar y enviar alimentan el SHA-256.
+        */
+        hasher.update(
+            &plaintext[..count]
+        );
 
         /*
          * Header de 4 bytes big-endian.
@@ -624,6 +775,9 @@ pub async fn send_file_with_progress(
         total_sent +=
             count as u64;
 
+        first_chunk =
+            false;
+
         let elapsed =
             start.elapsed()
                 .as_secs_f64();
@@ -693,8 +847,82 @@ pub async fn send_file_with_progress(
             "Could not send file EOF"
         )?;
 
+
+    /*
+    * =====================================================
+    * SHA-256 FINAL
+    * =====================================================
+    *
+    * El archivo ya se ha leído exactamente una vez.
+    */
+
+    let digest =
+        hasher.finalize();
+
+    let mut final_sha256 =
+        [0u8; 32];
+
+    final_sha256.copy_from_slice(
+        &digest
+    );
+
+
+    /*
+    * Autenticamos el digest final con la clave
+    * maestra de sesión.
+    */
+    let final_mac =
+        final_digest_hmac(
+            session_key,
+            &filename_len_raw,
+            filename_raw,
+            &filesize_raw,
+            &final_sha256,
+        )?;
+
+
+    /*
+    * =====================================================
+    * DIGEST FINAL PC -> VITA
+    * =====================================================
+    *
+    * B9
+    * SHA-256       32 bytes
+    * HMAC-SHA256   32 bytes
+    */
+
+    stream
+        .write_all(
+            &[INITIATOR_FILE_FINAL_DIGEST]
+        )
+        .await
+        .context(
+            "Could not send final digest marker"
+        )?;
+
+
+    stream
+        .write_all(
+            &final_sha256
+        )
+        .await
+        .context(
+            "Could not send final SHA-256"
+        )?;
+
+
+    stream
+        .write_all(
+            &final_mac
+        )
+        .await
+        .context(
+            "Could not send final digest HMAC"
+        )?;
+
+
     println!(
-        "Archivo enviado. Esperando SHA-256 de Vita..."
+        "Archivo enviado. Esperando verificación SHA-256 de Vita..."
     );
 
     /*

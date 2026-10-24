@@ -11,6 +11,9 @@ import 'package:refena_flutter/refena_flutter.dart';
 import 'package:localsend_app/pages/receive_page.dart';
 import 'package:localsend_app/pages/vitatransfer_progress_page.dart';
 import 'package:localsend_app/provider/selection/selected_receiving_files_provider.dart';
+import 'package:localsend_app/util/native/platform_check.dart';
+import 'package:localsend_app/util/native/tray_helper.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:localsend_isolates/model/dto/file_dto.dart';
 import 'package:localsend_isolates/model/session_status.dart';
 import 'package:mime/mime.dart';
@@ -114,7 +117,7 @@ class StartDiscoveryListener extends AsyncReduxAction<NearbyDevicesService, Near
         );
 
     vitaIncomingStream.listen(
-      (offer) {
+      (offer) async {
         notifier._discoveryLogger.addLog(
           '[VitaTransfer/Main] Incoming offer: '
           '${offer.sessionId} | '
@@ -287,7 +290,7 @@ class StartDiscoveryListener extends AsyncReduxAction<NearbyDevicesService, Near
           return ReceivePageVm(
             status: SessionStatus.waiting,
             sender: sender,
-            showSenderInfo: false,
+            showSenderInfo: true,
             files: files,
             message: null,
 
@@ -341,6 +344,23 @@ class StartDiscoveryListener extends AsyncReduxAction<NearbyDevicesService, Near
             },
           );
         });
+
+        /*
+        * Igual que LocalSend normal:
+        * si la ventana está minimizada, oculta o sin foco,
+        * reclamamos atención antes de mostrar la solicitud.
+        */
+        if (
+          checkPlatformHasTray() &&
+          (
+            await windowManager.isMinimized() ||
+            !(await windowManager.isVisible()) ||
+            !(await windowManager.isFocused())
+          )
+        )
+        {
+          await showFromTray();
+        }
 
         /*
         * Abrimos la pantalla estándar de recepción.

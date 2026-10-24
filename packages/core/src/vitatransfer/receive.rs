@@ -1,4 +1,8 @@
-use std::path::Path;
+use std::io::ErrorKind;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::time::Instant;
 
 use anyhow::{
@@ -32,6 +36,7 @@ use sha2::{
 use tokio::fs::{
     self,
     File,
+    OpenOptions,
 };
 
 use tokio::io::{
@@ -143,6 +148,96 @@ fn validate_filename(
     }
 
     Ok(())
+}
+
+async fn unique_output_path(
+    output_directory: &Path,
+    filename: &str,
+) -> Result<PathBuf> {
+    let original =
+        Path::new(
+            filename
+        );
+
+    let stem =
+        original
+            .file_stem()
+            .and_then(
+                |value| value.to_str()
+            )
+            .unwrap_or(
+                filename
+            );
+
+    let extension =
+        original
+            .extension()
+            .and_then(
+                |value| value.to_str()
+            );
+
+    for duplicate_index in 0u32.. {
+        let candidate_name =
+            if duplicate_index == 0 {
+                filename.to_string()
+            }
+            else {
+                match extension {
+                    Some(extension)
+                        if !extension.is_empty() =>
+                    {
+                        format!(
+                            "{stem} ({duplicate_index}).{extension}"
+                        )
+                    }
+
+                    _ => {
+                        format!(
+                            "{stem} ({duplicate_index})"
+                        )
+                    }
+                }
+            };
+
+        let candidate =
+            output_directory
+                .join(
+                    candidate_name
+                );
+
+        match fs::metadata(
+            &candidate
+        )
+        .await
+        {
+            Ok(_) => {
+                continue;
+            }
+
+            Err(error)
+                if error.kind()
+                    == ErrorKind::NotFound =>
+            {
+                return Ok(
+                    candidate
+                );
+            }
+
+            Err(error) => {
+                return Err(
+                    error
+                )
+                .with_context(|| {
+                    format!(
+                        "Could not inspect destination {}",
+                        candidate.display()
+                    )
+                });
+            }
+        }
+    }
+
+    unreachable!()
 }
 
 fn verify_metadata_hmac(
@@ -781,10 +876,11 @@ where
     })?;
 
     let output_path =
-        output_directory
-            .join(
-                &filename
-            );
+        unique_output_path(
+            output_directory,
+            &filename,
+        )
+        .await?;
 
     println!(
         "Destino: {}",
@@ -867,16 +963,19 @@ where
         Result<(u64, [u8; 32])> =
         async {
             let mut output =
-                File::create(
-                    &output_path
-                )
-                .await
-                .with_context(|| {
-                    format!(
-                        "Could not create {}",
-                        output_path.display()
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(
+                        &output_path
                     )
-                })?;
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Could not create {}",
+                            output_path.display()
+                        )
+                    })?;
 
             let mut actual_hash =
                 Sha256::new();

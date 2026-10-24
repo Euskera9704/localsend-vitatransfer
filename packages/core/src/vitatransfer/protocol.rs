@@ -4,6 +4,15 @@ pub const SESSION_READY: u8 = 0xC0;
 
 pub const COMMAND_FILE: u8 = 0x01;
 pub const COMMAND_SESSION_END: u8 = 0x02;
+
+/*
+ * PC -> Vita
+ *
+ * Archivo enviado en streaming:
+ * no existe SHA-256 previo.
+ */
+pub const COMMAND_FILE_STREAMING: u8 =
+    0x04;
 pub const COMMAND_REQUEST_RESPONDER_FILE: u8 = 0x03;
 
 pub const METADATA_READY: u8 = 0xB0;
@@ -33,6 +42,19 @@ pub const RESPONDER_FILE_OFFER_STREAMING:
 
 pub const RESPONDER_FILE_FINAL_DIGEST:
     u8 = 0xB8;
+
+/*
+ * PC -> Vita
+ *
+ * Después del EOF del archivo streaming,
+ * PC envía:
+ *
+ * B9
+ * SHA-256       32 bytes
+ * HMAC-SHA256   32 bytes
+ */
+pub const INITIATOR_FILE_FINAL_DIGEST: u8 =
+    0xB9;
 
 pub const BATCH_MANIFEST_MAC_LABEL:
     &[u8] =
@@ -74,6 +96,26 @@ pub const R2I_STREAM_META_MAC_LABEL:
 pub const R2I_FINAL_DIGEST_MAC_LABEL:
     &[u8] =
     b"VFT-R2I-FINAL-DIGEST-v1";
+
+
+/*
+ * PC -> Vita streaming.
+ *
+ * La metadata inicial no contiene SHA-256.
+ */
+pub const I2R_STREAM_META_MAC_LABEL:
+    &[u8] =
+    b"VFT-I2R-STREAM-METADATA-v1";
+
+
+/*
+ * Autentica el SHA-256 calculado por PC
+ * al terminar de transmitir el archivo.
+ */
+pub const I2R_FINAL_DIGEST_MAC_LABEL:
+    &[u8] =
+    b"VFT-I2R-FINAL-DIGEST-v1";
+
 
 pub const META_MAC_LABEL: &[u8] =
     b"VFT-METADATA-MAC-v1";

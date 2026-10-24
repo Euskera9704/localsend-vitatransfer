@@ -18,6 +18,7 @@ import 'package:localsend_app/util/native/taskbar_helper.dart';
 import 'package:localsend_app/util/ui/snackbar.dart';
 import 'package:localsend_app/widget/device_bage.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
+import 'package:localsend_app/widget/vita_device_icon.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/model/dto/file_dto.dart';
 import 'package:localsend_isolates/model/session_status.dart';
@@ -117,7 +118,15 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                                       if (vm.showSenderInfo && !smallUi)
                                         Padding(
                                           padding: const EdgeInsets.only(bottom: 10),
-                                          child: Icon(vm.sender.deviceType.icon, size: 64),
+                                          child:
+                                              vm.sender.transport == DeviceTransport.vitaTransfer
+                                                  ? const VitaDeviceIcon(
+                                                      size: 64,
+                                                    )
+                                                  : Icon(
+                                                      vm.sender.deviceType.icon,
+                                                      size: 64,
+                                                    ),
                                         ),
                                       Builder(
                                         builder: (context) {
@@ -156,35 +165,63 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                                         style: smallUi ? null : Theme.of(context).textTheme.titleLarge,
                                         textAlign: TextAlign.center,
                                       ),
-                                      if (vm.showSenderInfo && vm.message == null)
+                                      if (
+                                        vm.showSenderInfo &&
+                                        vm.message == null &&
+                                        vm.sender.transport !=
+                                            DeviceTransport.vitaTransfer
+                                      )
                                         Padding(
                                           padding: const EdgeInsets.only(top: 8),
                                           child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
                                               TextButton.icon(
                                                 onPressed: !vm.sender.https
                                                     ? null
                                                     : () async => await context.push(
-                                                        () => VerifyPage(
-                                                          fingerprint: CombinedFingerprint.load(context, vm.sender.fingerprint),
+                                                          () => VerifyPage(
+                                                            fingerprint:
+                                                                CombinedFingerprint.load(
+                                                              context,
+                                                              vm.sender.fingerprint,
+                                                            ),
+                                                          ),
                                                         ),
-                                                      ),
                                                 style: TextButton.styleFrom(
-                                                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                                                  foregroundColor:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurface,
                                                 ),
-                                                icon: Icon(Icons.verified_user),
-                                                label: Text(t.verifyPage.title),
+                                                icon: const Icon(
+                                                  Icons.verified_user,
+                                                ),
+                                                label: Text(
+                                                  t.verifyPage.title,
+                                                ),
                                               ),
                                               TextButton.icon(
                                                 style: TextButton.styleFrom(
-                                                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                                                  foregroundColor:
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurface,
                                                 ),
                                                 onPressed: () async {
-                                                  await context.push(() => ReceiveOptionsPage(vm));
+                                                  await context.push(
+                                                    () => ReceiveOptionsPage(
+                                                      vm,
+                                                    ),
+                                                  );
                                                 },
-                                                icon: const Icon(Icons.settings),
-                                                label: Text(t.receiveOptionsPage.title),
+                                                icon: const Icon(
+                                                  Icons.settings,
+                                                ),
+                                                label: Text(
+                                                  t.receiveOptionsPage.title,
+                                                ),
                                               ),
                                             ],
                                           ),

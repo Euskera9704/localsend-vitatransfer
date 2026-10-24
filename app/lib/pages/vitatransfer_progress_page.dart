@@ -10,6 +10,8 @@ import 'package:localsend_app/widget/file_thumbnail.dart';
 import 'package:localsend_isolates/model/dto/file_dto.dart';
 import 'package:localsend_isolates/rust/api/vitatransfer.dart';
 import 'package:localsend_isolates/util/file_size_helper.dart';
+import 'package:localsend_app/provider/selection/selected_sending_files_provider.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
 const _advancedProgressPanelExtraPadding = 100.0;
@@ -82,6 +84,18 @@ class _VitaTransferProgressPageState
     extends State<VitaTransferProgressPage> {
   StreamSubscription<dynamic>? _subscription;
 
+  /*
+  * Progreso visual interpolado.
+  *
+  * El progreso real sigue viniendo exclusivamente de Rust.
+  * Esto solo suaviza la representación gráfica entre chunks.
+  */
+  Timer? _visualProgressTimer;
+
+  double _visualTotalBytes = 0.0;
+  double _visualAnchorBytes = 0.0;
+  DateTime? _visualAnchorTime;
+
   late final List<int> _fileBytesSent;
   late final int _totalSize;
 
@@ -143,6 +157,8 @@ class _VitaTransferProgressPageState
           ) =>
               previous + size,
         );
+
+    _startVisualProgressTimer();
 
     /*
     * =====================================================
@@ -263,6 +279,8 @@ class _VitaTransferProgressPageState
       _megabytesPerSecond =
           progress.megabytesPerSecond;
 
+      _syncVisualProgressToReal();
+
       /*
        * =====================================================
        * FINAL CORRECTO
@@ -281,6 +299,9 @@ class _VitaTransferProgressPageState
 
         _totalBytesSent =
             _totalSize;
+
+        _visualTotalBytes =
+            _totalSize.toDouble();
 
         _finished = true;
         _megabytesPerSecond = 0.0;
@@ -355,6 +376,8 @@ class _VitaTransferProgressPageState
 
       _megabytesPerSecond =
           progress.megabytesPerSecond;
+
+      _syncVisualProgressToReal();
     });
   }
 
@@ -393,6 +416,9 @@ class _VitaTransferProgressPageState
       _totalBytesSent =
           _totalSize;
 
+      _visualTotalBytes =
+          _totalSize.toDouble();
+
       _finished = true;
       _megabytesPerSecond = 0.0;
     });
@@ -412,6 +438,138 @@ class _VitaTransferProgressPageState
       _finished = true;
       _megabytesPerSecond = 0.0;
     });
+  }
+
+  void _syncVisualProgressToReal() {
+    final realBytes =
+        _totalBytesSent.toDouble();
+
+    /*
+    * Nunca hacemos retroceder la barra.
+    *
+    * Si ha llegado un nuevo chunk real que supera
+    * nuestra estimación visual, saltamos hasta él.
+    */
+    if (_visualTotalBytes < realBytes) {
+      _visualTotalBytes =
+          realBytes;
+    }
+
+    /*
+    * Este punto se convierte en el nuevo ancla
+    * para la interpolación basada en velocidad.
+    */
+    _visualAnchorBytes =
+        _visualTotalBytes;
+
+    _visualAnchorTime =
+        DateTime.now();
+  }
+
+
+  void _startVisualProgressTimer() {
+    _visualProgressTimer =
+        Timer.periodic(
+      const Duration(
+        milliseconds: 50,
+      ),
+      (_) {
+        if (
+          !mounted ||
+          _finished ||
+          _canceled ||
+          _error != null ||
+          _megabytesPerSecond <= 0.0 ||
+          _totalSize <= 0
+        ) {
+          return;
+        }
+
+        final anchorTime =
+            _visualAnchorTime;
+
+        if (anchorTime == null) {
+          return;
+        }
+
+        final elapsedSeconds =
+            DateTime.now()
+                    .difference(anchorTime)
+                    .inMicroseconds /
+                1000000.0;
+
+        final bytesPerSecond =
+            _megabytesPerSecond *
+            1024.0 *
+            1024.0;
+
+        /*
+        * Estimación basada exclusivamente en:
+        *
+        * último punto real conocido
+        * +
+        * velocidad medida
+        * ×
+        * tiempo transcurrido.
+        */
+        var estimatedBytes =
+            _visualAnchorBytes +
+            bytesPerSecond *
+                elapsedSeconds;
+
+        /*
+        * Nunca permitimos adelantarnos un chunk entero.
+        *
+        * El siguiente evento real suele llegar 16 MiB
+        * después. Nos detenemos medio MiB antes.
+        */
+        const maxLeadBytes =
+            (15 * 1024 * 1024) +
+            (512 * 1024);
+
+        var maximumVisualBytes =
+            _totalBytesSent.toDouble() +
+            maxLeadBytes;
+
+        /*
+        * Tampoco mostramos 100 % hasta que Rust
+        * confirme realmente el final.
+        */
+        final unfinishedCeiling =
+            _totalSize * 0.995;
+
+        if (
+          maximumVisualBytes >
+          unfinishedCeiling
+        ) {
+          maximumVisualBytes =
+              unfinishedCeiling;
+        }
+
+        if (
+          estimatedBytes >
+          maximumVisualBytes
+        ) {
+          estimatedBytes =
+              maximumVisualBytes;
+        }
+
+        /*
+        * La barra visual nunca retrocede.
+        */
+        if (
+          estimatedBytes <=
+          _visualTotalBytes
+        ) {
+          return;
+        }
+
+        setState(() {
+          _visualTotalBytes =
+              estimatedBytes;
+        });
+      },
+    );
   }
 
   int _clamp(
@@ -440,7 +598,95 @@ class _VitaTransferProgressPageState
       return 0.0;
     }
 
-    return _fileBytesSent[index] /
+    /*
+    * Archivos anteriores al actual:
+    * usamos su progreso real.
+    */
+    if (
+      index != _currentFileIndex ||
+      _finished
+    ) {
+      return _fileBytesSent[index] /
+          size;
+    }
+
+    /*
+    * Calculamos cuántos bytes del progreso visual total
+    * pertenecen al archivo actual.
+    *
+    * Ejemplo:
+    *
+    * archivo 1 = 50 MB
+    * archivo 2 = actual
+    * progreso visual total = 70 MB
+    *
+    * progreso visual archivo 2 = 20 MB
+    */
+    var previousFilesSize = 0;
+
+    for (
+      var previous = 0;
+      previous < index;
+      previous++
+    ) {
+      previousFilesSize +=
+          _fileSizeAt(previous);
+    }
+
+    var visualFileBytes =
+        _visualTotalBytes -
+        previousFilesSize;
+
+    /*
+    * Nunca mostramos menos que el progreso real
+    * ya confirmado por Rust.
+    */
+    final realFileBytes =
+        _fileBytesSent[index]
+            .toDouble();
+
+    if (
+      visualFileBytes <
+      realFileBytes
+    ) {
+      visualFileBytes =
+          realFileBytes;
+    }
+
+    /*
+    * Mientras Rust no haya confirmado realmente
+    * que el archivo terminó, evitamos mostrar
+    * visualmente el 100 %.
+    */
+    if (
+      _fileBytesSent[index] <
+      size
+    ) {
+      final unfinishedCeiling =
+          size * 0.995;
+
+      if (
+        visualFileBytes >
+        unfinishedCeiling
+      ) {
+        visualFileBytes =
+            unfinishedCeiling;
+      }
+    }
+
+    if (visualFileBytes < 0.0) {
+      visualFileBytes = 0.0;
+    }
+
+    if (
+      visualFileBytes >
+      size
+    ) {
+      visualFileBytes =
+          size.toDouble();
+    }
+
+    return visualFileBytes /
         size;
   }
 
@@ -451,6 +697,30 @@ class _VitaTransferProgressPageState
 
     return _totalBytesSent /
         _totalSize;
+  }
+
+  double get _visualTotalProgress {
+    if (_totalSize <= 0) {
+      return 0.0;
+    }
+
+    if (_finished) {
+      return 1.0;
+    }
+
+    final progress =
+        _visualTotalBytes /
+        _totalSize;
+
+    if (progress < 0.0) {
+      return 0.0;
+    }
+
+    if (progress > 1.0) {
+      return 1.0;
+    }
+
+    return progress;
   }
 
   int get _finishedFileCount {
@@ -609,13 +879,42 @@ class _VitaTransferProgressPageState
       return;
     }
 
-    if (mounted) {
-      Navigator.of(context).pop();
+    if (!mounted) {
+      return;
     }
+
+    /*
+    * PC -> Vita terminado correctamente.
+    *
+    * Una vez consumida la selección para una transferencia
+    * completa, volvemos a la pestaña Enviar como una sesión
+    * nueva, sin conservar los archivos anteriores.
+    *
+    * Vita -> PC no debe tocar la selección de envío.
+    * Tampoco la vaciamos después de cancelaciones o errores.
+    */
+    if (
+      !widget.receiving &&
+      !_canceled &&
+      _error == null &&
+      _totalBytesSent >= _totalSize
+    ) {
+      context.ref
+          .redux(
+            selectedSendingFilesProvider,
+          )
+          .dispatch(
+            ClearSelectionAction(),
+          );
+    }
+
+    Navigator.of(context).pop();
   }
 
   @override
   void dispose() {
+    _visualProgressTimer?.cancel();
+
     final subscription =
         _subscription;
 
@@ -965,7 +1264,7 @@ class _VitaTransferProgressPageState
                                 Tween<double>(
                                   begin: 0,
                                   end:
-                                      _totalProgress,
+                                      _visualTotalProgress,
                                 ),
 
                             duration:
